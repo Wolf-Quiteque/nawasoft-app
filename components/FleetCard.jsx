@@ -38,7 +38,9 @@ export default function FleetCard({ entry, index = 0 }) {
             {run ? (
               <>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {run.origins.map((o) => o.origin_city).join(' + ')} → {run.origins[0]?.destination_city} · {formatTime(run.departure_time)}
+                  {/* Several legs can share a pickup city (Benguela→Luanda,
+                      Benguela→Sumbe…), so list each terminal only once. */}
+                  {[...new Set(run.origins.map((o) => o.origin_city))].join(' + ')} → {[...new Set(run.origins.map((o) => o.destination_city))].join(' / ')} · {formatTime(run.departure_time)}
                 </p>
                 <CapacityBar sold={sold} capacity={capacity} className="mt-2.5" />
                 <p className="mt-1 text-[11px] text-muted-foreground">

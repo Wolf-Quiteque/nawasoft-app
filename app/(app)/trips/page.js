@@ -53,15 +53,19 @@ export default function TripsPage() {
                   <span className="text-sm font-black text-primary">{run.sold}/{run.capacity}</span>
                 </div>
 
+                {/* Legs often share a pickup city and differ only by
+                    destination, so show each terminal once on either side. */}
                 <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  {run.legs.map((leg, li) => (
-                    <span key={leg.trip_id} className="flex items-center gap-1.5">
+                  {[...new Set(run.legs.map((l) => l.origin_city))].map((city, li) => (
+                    <span key={city} className="flex items-center gap-1.5">
                       {li > 0 ? <span className="text-border">+</span> : null}
-                      <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">{leg.origin_city}</span>
+                      <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">{city}</span>
                     </span>
                   ))}
                   <ArrowRight size={11} />
-                  <span className="font-medium text-foreground">{run.legs[0]?.destination_city}</span>
+                  <span className="font-medium text-foreground">
+                    {[...new Set(run.legs.map((l) => l.destination_city))].join(' / ')}
+                  </span>
                 </div>
 
                 <CapacityBar sold={run.sold} capacity={run.capacity} className="mt-3" />
