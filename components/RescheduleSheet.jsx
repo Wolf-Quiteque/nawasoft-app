@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Clock, AlertCircle } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
@@ -10,6 +10,7 @@ import Skeleton from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 import { formatTime, formatKz, todayInLuanda } from '@/lib/format';
 import { REBOOKING_FEE_PERCENT, rebookingFeeAmount } from '@/lib/rebooking-fee';
+import { createLatestGuard } from '@/lib/latest-request';
 
 const FEE_METHODS = [
   { value: 'cash', label: 'Dinheiro' },
@@ -30,6 +31,11 @@ export default function RescheduleSheet({ open, onClose, ticket, onSuccess }) {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Taps can fire requests that finish out of order; only the newest may
+  // update the sheet (see lib/latest-request.js).
+  const optionsGuard = useRef(createLatestGuard());
+  const seatsGuard = useRef(createLatestGuard());
+
   useEffect(() => {
     if (!open) return;
     setStep(1);
@@ -44,29 +50,50 @@ export default function RescheduleSheet({ open, onClose, ticket, onSuccess }) {
 
   useEffect(() => {
     if (!open || step !== 1) return;
+    const token = optionsGuard.current.next();
+    const isCurrent = () => optionsGuard.current.isCurrent(token);
+    setOptions(null);
     setLoadingOptions(true);
     fetch(`/api/tickets/${ticket.id}/reschedule-options?date=${date}`)
       .then((res) => res.json())
-      .then((body) => setOptions(body))
-      .catch(() => setOptions(null))
-      .finally(() => setLoadingOptions(false));
+      .then((body) => {
+        if (isCurrent()) setOptions(body);
+      })
+      .catch(() => {
+        if (isCurrent()) setOptions(null);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoadingOptions(false);
+      });
   }, [open, step, date, ticket?.id]);
 
   const pickTrip = (trip) => {
+    const token = seatsGuard.current.next();
+    const isCurrent = () => seatsGuard.current.isCurrent(token);
     setSelectedTrip(trip);
+    // A seat chosen on another trip must not carry over to this one.
+    setSelectedSeat(null);
+    setSeatData(null);
+    setError(null);
     setStep(2);
     setLoadingSeats(true);
     fetch(`/api/trips/${trip.trip_id}/seats`)
       .then((res) => res.json())
-      .then((body) => setSeatData(body))
-      .catch(() => setSeatData(null))
-      .finally(() => setLoadingSeats(false));
+      .then((body) => {
+        if (isCurrent()) setSeatData(body);
+      })
+      .catch(() => {
+        if (isCurrent()) setSeatData(null);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoadingSeats(false);
+      });
   };
 
   const feeAmount = rebookingFeeAmount(ticket?.price_paid_usd);
 
   const confirm = async () => {
-    if (!selectedSeat) return;
+    if (!selectedSeat || !selectedTrip) return;
     setSubmitting(true);
     setError(null);
     try {

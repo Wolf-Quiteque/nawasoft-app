@@ -41,7 +41,9 @@ export default function RoutesPage() {
       ) : data?.provinces?.length ? (
         <div className="flex flex-col gap-3">
           {data.provinces.map((group, gi) => {
-            const isOpen = open.has(group.province) || gi === 0;
+            // The first province starts open; tapping any header flips it.
+            // (It used to be forced open, so it could never be collapsed.)
+            const isOpen = gi === 0 ? !open.has(group.province) : open.has(group.province);
             return (
               <Card key={group.province} className="overflow-hidden">
                 <button
