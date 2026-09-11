@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { todayInLuanda } from '@/lib/format';
-import { sellableSeatCount } from '@/lib/seats';
+import { runOccupancy } from '@/lib/trip-run-detail';
 
 // GET ?date=YYYY-MM-DD — candidate trips on the ticket's own route for the
 // staff member to move this ticket onto.
@@ -33,7 +33,7 @@ export async function GET(request, { params }) {
 
   const { data: trips, error: tripsError } = await supabase
     .from('trips')
-    .select('id, departure_time, arrival_time, sales_capacity_limit, bus:buses(license_plate, capacity)')
+    .select('id, departure_time, arrival_time, bus:buses(license_plate, capacity)')
     .eq('route_id', routeId)
     .eq('status', 'scheduled')
     .gte('departure_time', dayStart)
@@ -41,36 +41,24 @@ export async function GET(request, { params }) {
     .order('departure_time');
   if (tripsError) return NextResponse.json({ error: tripsError.message }, { status: 500 });
 
-  const tripIds = (trips || []).map((t) => t.id);
-  let soldByTripId = new Map();
-  if (tripIds.length) {
-    const { data: tickets } = await supabase
-      .from('tickets')
-      .select('trip_id')
-      .in('trip_id', tripIds)
-      .in('status', ['active', 'used']);
-    for (const t of tickets || []) soldByTripId.set(t.trip_id, (soldByTripId.get(t.trip_id) || 0) + 1);
-  }
+  try {
+    // Free seats are counted across the whole bus run, since passengers
+    // boarding at other terminals take seats from the same coach.
+    const occupancies = await Promise.all((trips || []).map((t) => runOccupancy(supabase, t.id)));
 
-  const options = (trips || []).map((t) => {
-    const busCapacity = sellableSeatCount(t.bus?.capacity);
-    const capacity = t.sales_capacity_limit != null ? Math.min(busCapacity, t.sales_capacity_limit) : busCapacity;
-    const sold = soldByTripId.get(t.id) || 0;
-    return {
+    const options = (trips || []).map((t, i) => ({
       trip_id: t.id,
       departure_time: t.departure_time,
       arrival_time: t.arrival_time,
       bus_plate: t.bus?.license_plate,
-      capacity,
-      sold,
-      remaining: Math.max(capacity - sold, 0),
+      capacity: occupancies[i].capacity,
+      sold: occupancies[i].occupied,
+      remaining: occupancies[i].remaining,
       is_current: t.id === ticket.trip_id,
-    };
-  });
+    }));
 
-  return NextResponse.json({
-    date,
-    route: ticket.trip?.route,
-    options,
-  });
+    return NextResponse.json({ date, route: ticket.trip?.route, options });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

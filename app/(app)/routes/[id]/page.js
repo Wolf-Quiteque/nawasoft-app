@@ -86,6 +86,11 @@ export default function RouteDetailPage() {
                 <span className="text-sm font-black text-primary">{d.sold}/{d.capacity}</span>
               </div>
               <CapacityBar sold={d.sold} capacity={d.capacity} className="mt-2.5" />
+              {/* The bar is the whole bus, which also carries passengers
+                  boarding at other terminals; call out this route's share. */}
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {d.leg_sold} nesta rota · {d.remaining > 0 ? `${d.remaining} lugares livres no autocarro` : 'Autocarro esgotado'}
+              </p>
             </Card>
           ))}
         </div>

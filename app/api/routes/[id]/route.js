@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { todayInLuanda } from '@/lib/format';
-import { sellableSeatCount } from '@/lib/seats';
+import { runOccupancy } from '@/lib/trip-run-detail';
 
 export async function GET(request, { params }) {
   const auth = await requireStaff();
@@ -38,35 +38,39 @@ export async function GET(request, { params }) {
 
   if (tripsError) return NextResponse.json({ error: tripsError.message }, { status: 500 });
 
-  const tripIds = (trips || []).map((t) => t.id);
-  let soldByTripId = new Map();
-  if (tripIds.length) {
-    const { data: tickets, error: ticketsError } = await supabase
-      .from('tickets')
-      .select('trip_id')
-      .in('trip_id', tripIds)
-      .in('status', ['active', 'pending', 'used']);
-    if (ticketsError) return NextResponse.json({ error: ticketsError.message }, { status: 500 });
-    for (const t of tickets || []) {
-      soldByTripId.set(t.trip_id, (soldByTripId.get(t.trip_id) || 0) + 1);
+  try {
+    const tripIds = (trips || []).map((t) => t.id);
+    const soldByTripId = new Map();
+    if (tripIds.length) {
+      const { data: tickets, error: ticketsError } = await supabase
+        .from('tickets')
+        .select('trip_id')
+        .in('trip_id', tripIds)
+        .in('status', ['active', 'pending', 'used']);
+      if (ticketsError) throw ticketsError;
+      for (const t of tickets || []) {
+        soldByTripId.set(t.trip_id, (soldByTripId.get(t.trip_id) || 0) + 1);
+      }
     }
-  }
 
-  const departures = (trips || []).map((t) => {
-    const busCapacity = sellableSeatCount(t.bus?.capacity);
-    const capacity = t.sales_capacity_limit != null ? Math.min(busCapacity, t.sales_capacity_limit) : busCapacity;
-    const sold = soldByTripId.get(t.id) || 0;
-    return {
+    // Seats are shared with passengers picked up at other terminals on the
+    // same bus, so free seats come from the whole run, not this route alone.
+    const occupancies = await Promise.all((trips || []).map((t) => runOccupancy(supabase, t.id)));
+
+    const departures = (trips || []).map((t, i) => ({
       trip_id: t.id,
       departure_time: t.departure_time,
       arrival_time: t.arrival_time,
       status: t.status,
       bus: t.bus,
-      sold,
-      capacity,
-      remaining: Math.max(capacity - sold, 0),
-    };
-  });
+      leg_sold: soldByTripId.get(t.id) || 0,
+      sold: occupancies[i].occupied,
+      capacity: occupancies[i].capacity,
+      remaining: occupancies[i].remaining,
+    }));
 
-  return NextResponse.json({ date, route, departures });
+    return NextResponse.json({ date, route, departures });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

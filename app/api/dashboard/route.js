@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { todayInLuanda } from '@/lib/format';
-import { groupTripsIntoRuns, attachSoldCounts } from '@/lib/trip-runs';
+import { groupTripsIntoRuns, attachSoldCounts, pickCurrentRun, summarizeOrigins } from '@/lib/trip-runs';
 import { sellableSeatCount } from '@/lib/seats';
 
 const TRIP_SELECT = `
@@ -41,7 +41,7 @@ export async function GET() {
   const runs = groupTripsIntoRuns(trips || []);
   const tripIds = (trips || []).map((t) => t.id);
 
-  let soldByTripId = new Map();
+  const soldByTripId = new Map();
   if (tripIds.length) {
     const { data: tickets, error: ticketsError } = await supabase
       .from('tickets')
@@ -54,11 +54,17 @@ export async function GET() {
     }
   }
 
-  const runsWithCounts = attachSoldCounts(runs, soldByTripId);
-  const runsByBus = new Map(runsWithCounts.map((r) => [r.bus_id, r]));
+  // A bus can have more than one run in a day. Keep them all and show the
+  // one that is under way or next, instead of letting a later run silently
+  // replace an earlier one.
+  const runsByBus = new Map();
+  for (const run of attachSoldCounts(runs, soldByTripId)) {
+    if (!runsByBus.has(run.bus_id)) runsByBus.set(run.bus_id, []);
+    runsByBus.get(run.bus_id).push(run);
+  }
 
   const fleet = (buses || []).map((bus) => {
-    const run = runsByBus.get(bus.id);
+    const run = pickCurrentRun(runsByBus.get(bus.id) || []);
     if (run) {
       return {
         bus,
@@ -69,11 +75,13 @@ export async function GET() {
           origins: run.trips.map((t) => ({
             trip_id: t.id,
             route_id: t.route_id,
+            departure_time: t.departure_time,
             origin_city: t.route?.origin_city,
             origin_province: t.route?.origin_province,
             destination_city: t.route?.destination_city,
             sold: t.sold,
           })),
+          by_origin: summarizeOrigins(run.trips),
         },
         sold: run.sold,
         capacity: run.capacity,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { todayInLuanda } from '@/lib/format';
-import { groupTripsIntoRuns, attachSoldCounts } from '@/lib/trip-runs';
+import { groupTripsIntoRuns, attachSoldCounts, pickCurrentRun, summarizeOrigins } from '@/lib/trip-runs';
 import { sellableSeatCount } from '@/lib/seats';
 
 const TRIP_SELECT = `
@@ -37,14 +37,14 @@ export async function GET(request, { params }) {
     .gte('departure_time', dayStart)
     .in('status', ['scheduled', 'boarding'])
     .order('departure_time')
-    .limit(30);
+    .limit(40);
 
   if (tripsError) return NextResponse.json({ error: tripsError.message }, { status: 500 });
 
   const runs = groupTripsIntoRuns(trips || []);
   const tripIds = (trips || []).map((t) => t.id);
 
-  let soldByTripId = new Map();
+  const soldByTripId = new Map();
   if (tripIds.length) {
     const { data: tickets, error: ticketsError } = await supabase
       .from('tickets')
@@ -66,19 +66,24 @@ export async function GET(request, { params }) {
     remaining: run.remaining,
     origins: run.trips.map((t) => ({
       trip_id: t.id,
+      departure_time: t.departure_time,
       origin_city: t.route?.origin_city,
       origin_province: t.route?.origin_province,
       destination_city: t.route?.destination_city,
       sold: t.sold,
     })),
+    by_origin: summarizeOrigins(run.trips),
   }));
 
-  const [today, ...upcoming] = runsWithCounts;
+  const current = pickCurrentRun(runsWithCounts);
+  const currentIndex = current ? runsWithCounts.indexOf(current) : -1;
+  const upcoming = currentIndex >= 0 ? runsWithCounts.slice(currentIndex + 1) : [];
+  const capacity = sellableSeatCount(bus.capacity);
 
   return NextResponse.json({
     bus,
     date,
-    today: today || { departure_time: null, sold: 0, capacity: sellableSeatCount(bus.capacity), remaining: sellableSeatCount(bus.capacity), origins: [] },
+    today: current || { departure_time: null, sold: 0, capacity, remaining: capacity, origins: [], by_origin: [] },
     upcoming,
   });
 }
