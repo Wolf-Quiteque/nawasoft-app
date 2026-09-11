@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 1.1rem;
+
+  /* Golden-hour warm palette — light */
+  --background: oklch(0.985 0.014 75);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.97 0.018 72);
+  --foreground: oklch(0.2 0.03 40);
+  --muted: oklch(0.955 0.02 70);
+  --muted-foreground: oklch(0.47 0.03 45);
+  --border: oklch(0.9 0.022 60);
+  --primary: oklch(0.665 0.191 42);
+  --primary-foreground: oklch(0.99 0.012 90);
+  --accent: oklch(0.79 0.155 78);
+  --accent-foreground: oklch(0.22 0.04 50);
+  --success: oklch(0.6 0.135 150);
+  --success-foreground: oklch(0.99 0.01 150);
+  --danger: oklch(0.577 0.215 27);
+  --danger-foreground: oklch(0.99 0.01 27);
+  --warning: oklch(0.79 0.155 78);
+  --warning-foreground: oklch(0.24 0.05 60);
+  --ring: oklch(0.665 0.191 42);
+  --shadow-color: 30 40% 30%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.155 0.018 40);
+    --surface: oklch(0.205 0.022 40);
+    --surface-2: oklch(0.25 0.025 42);
+    --foreground: oklch(0.96 0.016 70);
+    --muted: oklch(0.255 0.02 40);
+    --muted-foreground: oklch(0.72 0.025 60);
+    --border: oklch(0.32 0.025 42);
+    --primary: oklch(0.72 0.185 44);
+    --primary-foreground: oklch(0.15 0.02 40);
+    --accent: oklch(0.76 0.15 75);
+    --accent-foreground: oklch(0.15 0.03 45);
+    --success: oklch(0.66 0.135 150);
+    --success-foreground: oklch(0.12 0.02 150);
+    --danger: oklch(0.66 0.2 27);
+    --danger-foreground: oklch(0.12 0.02 27);
+    --warning: oklch(0.76 0.15 75);
+    --warning-foreground: oklch(0.15 0.03 60);
+    --ring: oklch(0.72 0.185 44);
+  }
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-ring: var(--ring);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    height: 100%;
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100%;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  }
+}
+
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe-top {
+    padding-top: calc(env(safe-area-inset-top) + 0.75rem);
+  }
+  .pb-safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .h-safe-bottom {
+    height: env(safe-area-inset-bottom);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .sunset-gradient {
+    background: linear-gradient(135deg, oklch(0.79 0.155 78) 0%, oklch(0.665 0.191 42) 55%, oklch(0.58 0.19 30) 100%);
+  }
+  .card-shadow {
+    box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.06), 0 8px 24px -8px hsl(var(--shadow-color) / 0.18);
+  }
+  .press-scale {
+    transition: transform 120ms ease;
+  }
+  .press-scale:active {
+    transform: scale(0.96);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-muted);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-foreground) 8%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
