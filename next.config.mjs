@@ -10,6 +10,25 @@ const nextConfig = {
   // (other, unrelated apps in the same workspace) — pin the trace root to
   // this project so Next doesn't guess wrong.
   outputFileTracingRoot: __dirname,
+
+  // Strips the "powered by" header from every response. Small, but it is on
+  // every single one.
+  poweredByHeader: false,
+
+  experimental: {
+    // Rewrites barrel imports (`import { Bus } from 'lucide-react'`) into deep
+    // imports, so a screen using five icons ships five icons instead of the
+    // whole set.
+    optimizePackageImports: ['lucide-react', 'date-fns'],
+
+    // Client-side router cache. Next 15 defaults `dynamic` to 0, which means
+    // bouncing between the bottom-nav tabs re-fetches every screen from the
+    // server every time. 30s keeps tab switching instant during the rapid
+    // back-and-forth staff actually do, while still being well inside the
+    // window where a ticket count matters.
+    staleTimes: { dynamic: 30, static: 180 },
+  },
+
   async headers() {
     return [
       {
@@ -22,6 +41,14 @@ const nextConfig = {
       {
         source: '/manifest.webmanifest',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=3600' }],
+      },
+      {
+        // Fixed filenames, so not marked immutable — but they change about
+        // once a rebrand, and the install prompt and home-screen icon both
+        // pull them. A month of browser cache on top of the service worker's
+        // cache-first handling.
+        source: '/icons/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=2592000' }],
       },
     ];
   },

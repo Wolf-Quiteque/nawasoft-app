@@ -1,7 +1,6 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { MapPin, AlertCircle, Bus as BusIcon } from 'lucide-react';
 import BackButton from '@/components/BackButton';
 import { Card } from '@/components/ui/Card';
@@ -64,7 +63,7 @@ export default function BusDetailPage() {
       </div>
 
       {today.departure_time ? (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="animate-rise-in">
           <Card className="sunset-gradient p-5 text-white">
             <div className="flex items-center justify-between">
               <div>
@@ -113,7 +112,7 @@ export default function BusDetailPage() {
               </Card>
             ))}
           </div>
-        </motion.div>
+        </div>
       ) : (
         <EmptyState icon={BusIcon} title="Sem viagem hoje" description="Este autocarro não tem partidas agendadas para hoje." />
       )}

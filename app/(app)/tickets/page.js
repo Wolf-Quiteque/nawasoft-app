@@ -1,111 +1,20 @@
-'use client';
+import TicketsView from './TicketsView';
+import { requireStaff } from '@/lib/auth';
+import { loadTickets } from '@/lib/queries/tickets';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Search, AlertCircle, Ticket as TicketIcon, ArrowRight } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import Input from '@/components/ui/Input';
-import { Card } from '@/components/ui/Card';
-import TicketStatusBadge from '@/components/TicketStatusBadge';
-import { SkeletonList } from '@/components/ui/Skeleton';
-import EmptyState from '@/components/ui/EmptyState';
-import { useApi } from '@/lib/useApi';
-import { useDebounce } from '@/lib/useDebounce';
-import { cn } from '@/lib/cn';
-import { formatDateTime, formatKz } from '@/lib/format';
+export default async function TicketsPage() {
+  const auth = await requireStaff();
 
-const FILTERS = [
-  { value: '', label: 'Todos' },
-  { value: 'active', label: 'Ativos' },
-  { value: 'used', label: 'Usados' },
-  { value: 'refunded', label: 'Reembolsados' },
-];
+  let initialData = null;
+  if (!auth.error) {
+    try {
+      // Matches the view's default state (no search, no status filter), which
+      // is what `useApi` will consider already-loaded.
+      initialData = await loadTickets({});
+    } catch {
+      // Leave it unseeded — the client fetch runs and surfaces the error.
+    }
+  }
 
-export default function TicketsPage() {
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const debouncedSearch = useDebounce(search);
-
-  const params = new URLSearchParams();
-  if (debouncedSearch) params.set('search', debouncedSearch);
-  if (status) params.set('status', status);
-
-  const { data, loading, error } = useApi(`/api/tickets?${params.toString()}`);
-
-  return (
-    <div>
-      <PageHeader title="Bilhetes" subtitle="Pesquisar e gerir bilhetes" />
-
-      <Input
-        icon={<Search size={16} />}
-        placeholder="Nome, telefone, referência ou nº bilhete"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setStatus(f.value)}
-            className={cn(
-              'press-scale shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold',
-              status === f.value ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-surface text-muted-foreground'
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {error ? (
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
-          <AlertCircle size={16} />
-          {error}
-        </div>
-      ) : null}
-
-      <div className="mt-4">
-        {loading && !data ? (
-          <SkeletonList count={5} itemClassName="h-20" />
-        ) : data?.tickets?.length ? (
-          <div className="flex flex-col gap-2.5">
-            {data.tickets.map((t, i) => (
-              <motion.div key={t.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.24) }}>
-                <Link href={`/tickets/${t.id}`}>
-                  <Card className="press-scale p-3.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-bold">
-                          {t.passenger ? `${t.passenger.first_name || ''} ${t.passenger.last_name || ''}`.trim() : 'Passageiro'}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                          <span className="truncate">{t.trip?.route?.origin_city}</span>
-                          <ArrowRight size={10} className="shrink-0" />
-                          <span className="truncate">{t.trip?.route?.destination_city}</span>
-                          <span>· Assento {t.seat_number}</span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{t.ticket_number} · {formatDateTime(t.trip?.departure_time)}</p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <TicketStatusBadge status={t.status} />
-                        <span className="text-xs font-semibold">{formatKz(t.price_paid_usd)}</span>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            icon={TicketIcon}
-            title="Nenhum bilhete encontrado"
-            description={debouncedSearch ? 'Tente outro nome, telefone ou número.' : 'Ajuste os filtros ou pesquise por um bilhete.'}
-          />
-        )}
-      </div>
-    </div>
-  );
+  return <TicketsView initialData={initialData} />;
 }
