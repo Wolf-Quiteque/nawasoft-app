@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { ChevronRight, Bus as BusIcon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -12,11 +11,7 @@ export default function FleetCard({ entry, index = 0 }) {
   const { bus, run, sold, capacity, remaining } = entry;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
-    >
+    <div className="animate-rise-in" style={{ animationDelay: `${Math.min(index * 50, 300)}ms` }}>
       <Link href={`/buses/${bus.id}`}>
         <Card className="press-scale flex items-center gap-3.5 p-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
@@ -55,6 +50,6 @@ export default function FleetCard({ entry, index = 0 }) {
           <ChevronRight size={18} className="shrink-0 text-muted-foreground" />
         </Card>
       </Link>
-    </motion.div>
+    </div>
   );
 }

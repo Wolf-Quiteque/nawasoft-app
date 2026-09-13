@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { LogOut } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
-import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { initials } from '@/lib/format';
 
 export default function TopBar({ profile }) {
@@ -17,6 +16,9 @@ export default function TopBar({ profile }) {
     setLoggingOut(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
+      // Loaded on demand: supabase-js is ~35kB and signing out is the only
+      // thing every authenticated screen would otherwise need it for.
+      const { getSupabaseBrowserClient } = await import('@/lib/supabase-browser');
       await getSupabaseBrowserClient().auth.signOut();
     } finally {
       router.replace('/login');

@@ -2,7 +2,6 @@
 
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { Lock, Phone, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 import Input from '@/components/ui/Input';
@@ -53,12 +52,7 @@ function LoginForm() {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <div className="sunset-gradient relative flex flex-col items-center justify-end px-6 pb-12 pt-safe-top" style={{ minHeight: '38vh' }}>
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: 'easeOut' }}
-          className="flex flex-col items-center gap-3 text-center"
-        >
+        <div className="animate-rise-in flex flex-col items-center gap-3 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-3xl font-black text-white backdrop-blur">
             N
           </div>
@@ -66,15 +60,13 @@ function LoginForm() {
             <h1 className="text-2xl font-extrabold tracking-tight text-white">NAWASOFT</h1>
             <p className="text-sm font-medium text-white/85">Painel operacional NAWABUS</p>
           </div>
-        </motion.div>
+        </div>
       </div>
 
-      <motion.form
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
+      <form
         onSubmit={handleSubmit}
-        className="-mt-6 flex flex-1 flex-col gap-4 rounded-t-3xl bg-background px-6 pt-7"
+        style={{ animationDelay: '100ms' }}
+        className="animate-rise-in -mt-6 flex flex-1 flex-col gap-4 rounded-t-3xl bg-background px-6 pt-7"
       >
         <div>
           <h2 className="text-lg font-bold">Entrar</h2>
@@ -127,7 +119,7 @@ function LoginForm() {
         <p className="mt-auto pb-8 pt-6 text-center text-xs text-muted-foreground">
           A sessão mantém-se por 7 dias neste aparelho.
         </p>
-      </motion.form>
+      </form>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { TriangleAlert, ShieldCheck, AlertCircle, Bus as BusIcon } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -63,7 +62,7 @@ export default function EmergencyPage() {
         </div>
       ) : null}
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="animate-rise-in">
         <Card
           className={
             isActive
@@ -103,7 +102,7 @@ export default function EmergencyPage() {
             {isActive ? 'Retomar vendas' : 'Parar todas as vendas'}
           </Button>
         </Card>
-      </motion.div>
+      </div>
 
       <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Autocarros</p>
       <div className="flex flex-col gap-2">

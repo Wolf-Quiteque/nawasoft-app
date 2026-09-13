@@ -18,7 +18,6 @@
     "@supabase/supabase-js": "^2.75.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
-    "framer-motion": "^11.11.17",
     "lucide-react": "^0.462.0",
     "next": "^15.1.0",
     "react": "^18.3.1",

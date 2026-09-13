@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/lib/session';
+import { invalidateProfile } from '@/lib/auth';
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -19,6 +20,11 @@ export async function POST() {
       },
     }
   );
+
+  // Drop this user's cached profile so a sign-out is not papered over by the
+  // in-process cache in lib/auth.js.
+  const { data: claims } = await supabase.auth.getClaims();
+  invalidateProfile(claims?.claims?.sub);
 
   await supabase.auth.signOut();
   cookieStore.delete(SESSION_COOKIE);

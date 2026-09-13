@@ -1,76 +1,27 @@
-'use client';
+import DashboardView from './DashboardView';
+import { requireStaff } from '@/lib/auth';
+import { loadDashboard } from '@/lib/queries/dashboard';
 
-import { motion } from 'framer-motion';
-import { RefreshCw, TicketCheck, Bus as BusIcon, AlertCircle } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import FleetCard from '@/components/FleetCard';
-import { SkeletonList } from '@/components/ui/Skeleton';
-import EmptyState from '@/components/ui/EmptyState';
-import { useApi } from '@/lib/useApi';
-import { formatDate } from '@/lib/format';
+// Rendered on the server so the fleet board arrives with the HTML. The old
+// client-only version had to download and boot JS, then make a second
+// authenticated round trip to /api/dashboard before it could show anything but
+// a skeleton — on a phone that was the difference between "instant" and
+// "several seconds of shimmer".
+export default async function DashboardPage() {
+  // Pages render in parallel with their layout, so the layout's guard is not
+  // enough to keep a service-role query from running for a signed-out request.
+  // requireStaff() is cache()d, so this shares the layout's check rather than
+  // repeating it.
+  const auth = await requireStaff();
 
-export default function DashboardPage() {
-  const { data, loading, error, refetch } = useApi('/api/dashboard');
+  let initialData = null;
+  if (!auth.error) {
+    try {
+      initialData = await loadDashboard();
+    } catch {
+      // Leave it unseeded — the client fetch runs and surfaces the error.
+    }
+  }
 
-  return (
-    <div>
-      <PageHeader
-        title="Início"
-        subtitle={data?.date ? formatDate(`${data.date}T12:00:00+01:00`) : 'A carregar…'}
-        action={
-          <button
-            onClick={refetch}
-            className="press-scale flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-muted-foreground"
-            aria-label="Atualizar"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-        }
-      />
-
-      {data ? (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="sunset-gradient mb-5 grid grid-cols-2 gap-3 rounded-2xl p-4 text-white card-shadow"
-        >
-          <div>
-            <div className="flex items-center gap-1.5 text-white/85">
-              <TicketCheck size={14} />
-              <span className="text-[11px] font-semibold uppercase tracking-wide">Bilhetes vendidos hoje</span>
-            </div>
-            <p className="mt-1 text-2xl font-black">{data.totals.sold}</p>
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 text-white/85">
-              <BusIcon size={14} />
-              <span className="text-[11px] font-semibold uppercase tracking-wide">Autocarros em serviço</span>
-            </div>
-            <p className="mt-1 text-2xl font-black">
-              {data.totals.busesInService}<span className="text-base font-semibold text-white/75">/{data.fleetSize}</span>
-            </p>
-          </div>
-        </motion.div>
-      ) : null}
-
-      {error ? (
-        <div className="mb-4 flex items-center gap-2 rounded-2xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
-          <AlertCircle size={16} className="shrink-0" />
-          {error}
-        </div>
-      ) : null}
-
-      {loading && !data ? (
-        <SkeletonList count={5} />
-      ) : data && data.fleet.length ? (
-        <div className="flex flex-col gap-3">
-          {data.fleet.map((entry, i) => (
-            <FleetCard key={entry.bus.id} entry={entry} index={i} />
-          ))}
-        </div>
-      ) : data ? (
-        <EmptyState icon={BusIcon} title="Nenhum autocarro ativo" description="Ative autocarros para os ver aqui." />
-      ) : null}
-    </div>
-  );
+  return <DashboardView initialData={initialData} />;
 }
