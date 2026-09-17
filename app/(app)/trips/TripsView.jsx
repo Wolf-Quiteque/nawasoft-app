@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Bus as BusIcon, User, ArrowRight } from 'lucide-react';
+import { AlertCircle, Bus as BusIcon, User, ArrowRight, Plus } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import DateNav from '@/components/DateNav';
 import { Card } from '@/components/ui/Card';
@@ -11,16 +11,25 @@ import { SkeletonList } from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { useApi } from '@/lib/useApi';
 import { formatTime } from '@/lib/format';
+import Button from '@/components/ui/Button';
+import TripSchedulerSheet from '@/components/TripSchedulerSheet';
+import { useToast } from '@/components/ui/Toast';
 
 export default function TripsView({ initialDate, initialData = null }) {
   const [date, setDate] = useState(initialDate);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const router = useRouter();
+  const toast = useToast();
   // Today's departures come from the server render; changing the date fetches.
-  const { data, loading, error } = useApi(`/api/trips?date=${date}`, { initialData });
+  const { data, loading, error, refetch } = useApi(`/api/trips?date=${date}`, { initialData });
 
   return (
     <div>
-      <PageHeader title="Viagens" subtitle="Partidas agrupadas por autocarro" />
+      <PageHeader
+        title="Viagens"
+        subtitle="Partidas agrupadas por autocarro"
+        action={<Button size="sm" onClick={() => setSchedulerOpen(true)}><Plus size={15} /> Programar</Button>}
+      />
       <DateNav date={date} onChange={setDate} />
 
       {error ? (
@@ -87,6 +96,13 @@ export default function TripsView({ initialDate, initialData = null }) {
       ) : data ? (
         <EmptyState icon={BusIcon} title="Sem viagens" description="Não há partidas agendadas para este dia." />
       ) : null}
+
+      <TripSchedulerSheet
+        open={schedulerOpen}
+        onClose={() => setSchedulerOpen(false)}
+        toast={toast}
+        onScheduled={() => refetch()}
+      />
     </div>
   );
 }
