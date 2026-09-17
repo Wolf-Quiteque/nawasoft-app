@@ -9,13 +9,25 @@ function chunkRows(seats) {
   return rows;
 }
 
-export default function SeatGrid({ seats, selectedSeat, onSelectSeat, onOccupiedTap, selectable = true }) {
+export default function SeatGrid({
+  seats,
+  selectedSeat,
+  selectedSeats,
+  onSelectSeat,
+  onOccupiedTap,
+  selectable = true,
+}) {
+  // Callers pick one seat (rescheduling) or several (issuing for a group);
+  // `order` is what turns the second case into "this seat is passenger 3".
+  const multi = Array.isArray(selectedSeats);
+  const orderOf = (n) => (multi ? selectedSeats.indexOf(n) : -1);
   const copilot = seats.find((s) => s.state === 'copilot');
   const rest = seats.filter((s) => s.state !== 'copilot');
   const rows = chunkRows(rest);
 
   const seatButton = (seat) => {
-    const isSelected = selectedSeat === seat.number;
+    const order = orderOf(seat.number);
+    const isSelected = multi ? order >= 0 : selectedSeat === seat.number;
     const isOccupied = seat.state === 'occupied';
     const isAvailable = seat.state === 'available';
 
@@ -36,7 +48,11 @@ export default function SeatGrid({ seats, selectedSeat, onSelectSeat, onOccupied
           isSelected && 'border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/30'
         )}
       >
-        {isSelected ? <Check size={16} /> : <Armchair size={16} className={isOccupied ? 'opacity-60' : 'opacity-70'} />}
+        {isSelected ? (
+          multi ? <span className="text-[13px] leading-none">{order + 1}</span> : <Check size={16} />
+        ) : (
+          <Armchair size={16} className={isOccupied ? 'opacity-60' : 'opacity-70'} />
+        )}
         <span className="mt-0.5 leading-none">{seat.number}</span>
       </button>
     );
