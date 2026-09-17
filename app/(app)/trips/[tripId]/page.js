@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertCircle, Bus as BusIcon, User, SlidersHorizontal, Ticket as TicketIcon, Phone, Plus } from 'lucide-react';
+import { AlertCircle, Bus as BusIcon, User, SlidersHorizontal, Ticket as TicketIcon, Phone, Plus, Settings2 } from 'lucide-react';
 import BackButton from '@/components/BackButton';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -16,6 +16,7 @@ import CapacityBar from '@/components/CapacityBar';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/ui/Toast';
 import { formatTime, formatKz } from '@/lib/format';
+import TripManageSheet from '@/components/TripManageSheet';
 
 export default function TripDetailPage() {
   const { tripId } = useParams();
@@ -30,6 +31,7 @@ export default function TripDetailPage() {
   const [savingLimit, setSavingLimit] = useState(false);
   const [seatSheet, setSeatSheet] = useState(null);
   const [issueOpen, setIssueOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const openLimitSheet = () => {
     const current = data?.run?.legs?.find((l) => l.sales_capacity_limit != null)?.sales_capacity_limit;
@@ -83,7 +85,10 @@ export default function TripDetailPage() {
 
   return (
     <div>
-      <BackButton fallbackHref="/trips" />
+      <div className="flex items-center justify-between">
+        <BackButton fallbackHref="/trips" />
+        <Button size="sm" variant="secondary" onClick={() => setManageOpen(true)}><Settings2 size={14} /> Gerir</Button>
+      </div>
 
       <Card className="sunset-gradient p-5 text-white">
         <div className="flex items-center justify-between">
@@ -159,6 +164,21 @@ export default function TripDetailPage() {
         onIssued={() => {
           refetch();
           refetchSeats();
+        }}
+      />
+
+      <TripManageSheet
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        tripId={tripId}
+        run={run}
+        toast={toast}
+        onChanged={(action) => {
+          if (action === 'cancel' || action === 'merge') router.push('/trips');
+          else {
+            refetch();
+            refetchSeats();
+          }
         }}
       />
 
