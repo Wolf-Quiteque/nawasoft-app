@@ -14,6 +14,8 @@ import { formatTime } from '@/lib/format';
 import Button from '@/components/ui/Button';
 import TripSchedulerSheet from '@/components/TripSchedulerSheet';
 import { useToast } from '@/components/ui/Toast';
+import { groupByOriginProvince } from '@/lib/origin-groups';
+import OriginProvinceSection from '@/components/OriginProvinceSection';
 
 export default function TripsView({ initialDate, initialData = null }) {
   const [date, setDate] = useState(initialDate);
@@ -22,6 +24,7 @@ export default function TripsView({ initialDate, initialData = null }) {
   const toast = useToast();
   // Today's departures come from the server render; changing the date fetches.
   const { data, loading, error, refetch } = useApi(`/api/trips?date=${date}`, { initialData });
+  const provinceGroups = groupByOriginProvince(data?.runs || []);
 
   return (
     <div>
@@ -42,55 +45,35 @@ export default function TripsView({ initialDate, initialData = null }) {
       {loading && !data ? (
         <SkeletonList count={4} itemClassName="h-28" />
       ) : data?.runs?.length ? (
-        <div className="flex flex-col gap-3">
-          {data.runs.map((run, i) => (
-            <div
-              key={run.key}
-              className="animate-rise-in"
-              style={{ animationDelay: `${Math.min(i * 40, 300)}ms` }}
-            >
-              <Card
-                className="press-scale cursor-pointer p-4"
-                onClick={() => router.push(`/trips/${run.legs[0].trip_id}`)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                      <BusIcon size={17} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold">{run.bus?.license_plate}</p>
-                      <p className="text-xs text-muted-foreground">{formatTime(run.departure_time)}</p>
+        <div className="flex flex-col gap-5">
+          {provinceGroups.map((group) => (
+            <OriginProvinceSection key={group.province} province={group.province} count={group.entries.length}>
+              {group.entries.map((run, index) => (
+                <div key={run.key} className="animate-rise-in" style={{ animationDelay: `${Math.min(index * 40, 300)}ms` }}>
+                  <Card className="press-scale cursor-pointer p-4" onClick={() => router.push(`/trips/${run.legs[0].trip_id}`)}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/12 text-primary"><BusIcon size={17} /></span>
+                        <div><p className="text-sm font-bold">{run.bus?.license_plate}</p><p className="text-xs text-muted-foreground">{formatTime(run.departure_time)}</p></div>
+                      </div>
+                      <span className="text-sm font-black text-primary">{run.sold}/{run.capacity}</span>
                     </div>
-                  </div>
-                  <span className="text-sm font-black text-primary">{run.sold}/{run.capacity}</span>
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      {[...new Set(run.legs.map((leg) => leg.origin_city))].map((city, cityIndex) => (
+                        <span key={city} className="flex items-center gap-1.5">
+                          {cityIndex > 0 ? <span className="text-border">+</span> : null}
+                          <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">{city}</span>
+                        </span>
+                      ))}
+                      <ArrowRight size={11} />
+                      <span className="font-medium text-foreground">{[...new Set(run.legs.map((leg) => leg.destination_city))].join(' / ')}</span>
+                    </div>
+                    <CapacityBar sold={run.sold} capacity={run.capacity} className="mt-3" />
+                    {run.driver ? <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground"><User size={12} />{run.driver.first_name} {run.driver.last_name}</div> : null}
+                  </Card>
                 </div>
-
-                {/* Legs often share a pickup city and differ only by
-                    destination, so show each terminal once on either side. */}
-                <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  {[...new Set(run.legs.map((l) => l.origin_city))].map((city, li) => (
-                    <span key={city} className="flex items-center gap-1.5">
-                      {li > 0 ? <span className="text-border">+</span> : null}
-                      <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">{city}</span>
-                    </span>
-                  ))}
-                  <ArrowRight size={11} />
-                  <span className="font-medium text-foreground">
-                    {[...new Set(run.legs.map((l) => l.destination_city))].join(' / ')}
-                  </span>
-                </div>
-
-                <CapacityBar sold={run.sold} capacity={run.capacity} className="mt-3" />
-
-                {run.driver ? (
-                  <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <User size={12} />
-                    {run.driver.first_name} {run.driver.last_name}
-                  </div>
-                ) : null}
-              </Card>
-            </div>
+              ))}
+            </OriginProvinceSection>
           ))}
         </div>
       ) : data ? (

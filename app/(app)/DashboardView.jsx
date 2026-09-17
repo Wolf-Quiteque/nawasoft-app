@@ -7,11 +7,14 @@ import { SkeletonList } from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import { useApi } from '@/lib/useApi';
 import { formatDate } from '@/lib/format';
+import { groupByOriginProvince } from '@/lib/origin-groups';
+import OriginProvinceSection from '@/components/OriginProvinceSection';
 
 export default function DashboardView({ initialData = null }) {
   // Seeded from the server render, so the fleet board is on screen in the
   // first paint. Refetching only happens when staff tap refresh.
   const { data, loading, error, refetch } = useApi('/api/dashboard', { initialData });
+  const provinceGroups = groupByOriginProvince(data?.fleet || [], (entry) => entry.run);
 
   return (
     <div>
@@ -60,9 +63,13 @@ export default function DashboardView({ initialData = null }) {
       {loading && !data ? (
         <SkeletonList count={5} />
       ) : data && data.fleet.length ? (
-        <div className="flex flex-col gap-3">
-          {data.fleet.map((entry, i) => (
-            <FleetCard key={entry.bus.id} entry={entry} index={i} />
+        <div className="flex flex-col gap-5">
+          {provinceGroups.map((group) => (
+            <OriginProvinceSection key={group.province} province={group.province} count={group.entries.length}>
+              {group.entries.map((entry, index) => (
+                <FleetCard key={entry.bus.id} entry={entry} index={index} />
+              ))}
+            </OriginProvinceSection>
           ))}
         </div>
       ) : data ? (
