@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertCircle, Bus as BusIcon, User, SlidersHorizontal, Ticket as TicketIcon, Phone } from 'lucide-react';
+import { AlertCircle, Bus as BusIcon, User, SlidersHorizontal, Ticket as TicketIcon, Phone, Plus } from 'lucide-react';
 import BackButton from '@/components/BackButton';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -11,6 +11,7 @@ import Input from '@/components/ui/Input';
 import Sheet from '@/components/ui/Sheet';
 import Skeleton from '@/components/ui/Skeleton';
 import SeatGrid from '@/components/SeatGrid';
+import IssueTicketSheet from '@/components/IssueTicketSheet';
 import CapacityBar from '@/components/CapacityBar';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/ui/Toast';
@@ -28,6 +29,7 @@ export default function TripDetailPage() {
   const [limitValue, setLimitValue] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
   const [seatSheet, setSeatSheet] = useState(null);
+  const [issueOpen, setIssueOpen] = useState(false);
 
   const openLimitSheet = () => {
     const current = data?.run?.legs?.find((l) => l.sales_capacity_limit != null)?.sales_capacity_limit;
@@ -130,7 +132,13 @@ export default function TripDetailPage() {
         ))}
       </div>
 
-      <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Mapa de assentos</p>
+      <div className="mb-2 mt-5 flex items-center justify-between">
+        <p className="text-sm font-bold text-muted-foreground">Mapa de assentos</p>
+        <Button size="sm" onClick={() => setIssueOpen(true)} disabled={run.status !== 'scheduled' && run.status !== 'boarding'}>
+          <Plus size={14} />
+          Emitir bilhete
+        </Button>
+      </div>
       <Card className="p-4">
         {seatsLoading && !seatData ? (
           <Skeleton className="h-64" />
@@ -142,6 +150,17 @@ export default function TripDetailPage() {
           />
         ) : null}
       </Card>
+
+      <IssueTicketSheet
+        open={issueOpen}
+        onClose={() => setIssueOpen(false)}
+        run={run}
+        seats={seatData?.seats || []}
+        onIssued={() => {
+          refetch();
+          refetchSeats();
+        }}
+      />
 
       <Sheet open={limitOpen} onClose={() => setLimitOpen(false)} title="Limite de vendas">
         <p className="mb-3 text-sm text-muted-foreground">
