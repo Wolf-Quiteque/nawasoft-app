@@ -24,7 +24,7 @@ function addMonths(date, months) {
 export async function GET() {
   const auth = await requireStaff();
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
   const companyId = auth.profile.company_id || null;
   const companyQuery = supabase.from('companies').select('id, name').order('name');
   const busQuery = supabase.from('buses').select('id, company_id, license_plate, make, model, capacity').eq('is_active', true).order('license_plate');
@@ -84,7 +84,7 @@ export async function POST(request) {
     }
   }
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
   const routeIds = [...new Set([...legs, ...(round_trip ? return_legs : [])].map((leg) => leg.route_id))];
   const [busResult, driverResult, routesResult] = await Promise.all([
     supabase.from('buses').select('id').eq('id', bus_id).eq('company_id', company_id).eq('is_active', true).maybeSingle(),

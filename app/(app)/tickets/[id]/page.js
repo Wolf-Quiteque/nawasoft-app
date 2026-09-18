@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
   AlertCircle, ArrowRight, CalendarClock, Bus as BusIcon,
-  Armchair, Wallet, RotateCcw, CalendarCog, ReceiptText,
+  Armchair, Wallet, RotateCcw, CalendarCog, ReceiptText, ShieldCheck, History,
 } from 'lucide-react';
 import BackButton from '@/components/BackButton';
 import { Card } from '@/components/ui/Card';
@@ -16,7 +16,25 @@ import TicketStatusBadge from '@/components/TicketStatusBadge';
 import RescheduleSheet from '@/components/RescheduleSheet';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/ui/Toast';
-import { formatDateTime, formatKz, initials } from '@/lib/format';
+import { formatDateTime, formatFullDateTime, formatKz, initials } from '@/lib/format';
+
+const REVISION_LABELS = {
+  purchase: 'Bilhete emitido',
+  backfill: 'Registo histórico importado',
+  ticket_rebook: 'Bilhete reprogramado',
+  seat_change: 'Assento alterado',
+  trip_schedule_change: 'Horário da viagem alterado',
+  trip_bus_change: 'Autocarro da viagem alterado',
+  trip_route_change: 'Rota da viagem alterada',
+  trip_update: 'Dados da viagem alterados',
+};
+
+const ACCESS_LABELS = {
+  authorized: 'Documento autorizado',
+  blocked_refunded: 'Descarga bloqueada: reembolsado',
+  blocked_cancelled: 'Descarga bloqueada: cancelado',
+  blocked_unpaid: 'Descarga bloqueada: não pago',
+};
 
 function InfoRow({ icon: Icon, label, value }) {
   return (
@@ -84,6 +102,10 @@ export default function TicketDetailPage() {
   }
 
   const { ticket } = data;
+  const itineraryHistory = data.itinerary_history || [];
+  const documentAccesses = data.document_accesses || [];
+  const originalItinerary = itineraryHistory[0] || null;
+  const currentItinerary = itineraryHistory[itineraryHistory.length - 1] || null;
   const passengerName = ticket.passenger
     ? `${ticket.passenger.first_name || ''} ${ticket.passenger.last_name || ''}`.trim()
     : 'Passageiro';
@@ -114,9 +136,10 @@ export default function TicketDetailPage() {
         </div>
         <p className="mb-1 text-xs text-muted-foreground">{ticket.ticket_number}</p>
         <div className="divide-y divide-border">
-          <InfoRow icon={CalendarClock} label="Partida" value={formatDateTime(ticket.trip?.departure_time)} />
-          <InfoRow icon={BusIcon} label="Autocarro" value={`${ticket.trip?.bus?.license_plate} · ${ticket.trip?.bus?.make || ''}`} />
-          <InfoRow icon={Armchair} label="Assento" value={ticket.seat_number} />
+          <InfoRow icon={CalendarClock} label="Partida atual" value={formatDateTime(currentItinerary?.departure_time || ticket.trip?.departure_time)} />
+          <InfoRow icon={CalendarClock} label="Comprado em" value={formatFullDateTime(ticket.booking_time || ticket.created_at)} />
+          <InfoRow icon={BusIcon} label="Autocarro" value={`${currentItinerary?.bus_license_plate || ticket.trip?.bus?.license_plate} · ${currentItinerary?.bus_make || ticket.trip?.bus?.make || ''}`} />
+          <InfoRow icon={Armchair} label="Assento" value={currentItinerary?.seat_number || ticket.seat_number} />
           <InfoRow
             icon={Wallet}
             label="Pagamento"
@@ -124,6 +147,72 @@ export default function TicketDetailPage() {
           />
         </div>
       </Card>
+
+      <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Prova da emissão</p>
+      <Card className="p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600">
+            <ShieldCheck size={17} />
+          </span>
+          <div>
+            <p className="text-sm font-bold">Itinerário preservado</p>
+            <p className="text-xs text-muted-foreground">Registos append-only da base de dados</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          <div className="rounded-xl bg-muted p-3">
+            <p className="text-[11px] text-muted-foreground">Partida registada inicialmente</p>
+            <p className="mt-1 font-semibold">{formatFullDateTime(originalItinerary?.departure_time)}</p>
+          </div>
+          <div className="rounded-xl bg-muted p-3">
+            <p className="text-[11px] text-muted-foreground">Partida válida atualmente</p>
+            <p className="mt-1 font-semibold">{formatFullDateTime(currentItinerary?.departure_time || ticket.trip?.departure_time)}</p>
+          </div>
+        </div>
+        {originalItinerary?.is_historical_backfill ? (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+            Bilhete anterior ao novo sistema de auditoria. Este primeiro registo foi importado do horário que estava na base de dados durante a migração; alterações anteriores não podem ser comprovadas.
+          </div>
+        ) : null}
+      </Card>
+
+      {itineraryHistory.length ? (
+        <>
+          <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Histórico do itinerário</p>
+          <div className="flex flex-col gap-2">
+            {itineraryHistory.map((revision) => (
+              <Card key={revision.id} className="flex items-start gap-3 p-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <History size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{REVISION_LABELS[revision.event_type] || revision.event_type}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {revision.origin_city} → {revision.destination_city} · {formatFullDateTime(revision.departure_time)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Lugar {revision.seat_number} · {revision.bus_license_plate} · registado {formatFullDateTime(revision.recorded_at)}
+                  </p>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {documentAccesses.length ? (
+        <>
+          <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Acessos ao PDF</p>
+          <Card className="divide-y divide-border px-4">
+            {documentAccesses.map((access) => (
+              <div key={access.id} className="flex items-center justify-between gap-3 py-3">
+                <p className="text-sm font-semibold">{ACCESS_LABELS[access.outcome] || access.outcome}</p>
+                <p className="shrink-0 text-xs text-muted-foreground">{formatFullDateTime(access.requested_at)}</p>
+              </div>
+            ))}
+          </Card>
+        </>
+      ) : null}
 
       {ticket.rebooking_fees?.length ? (
         <>

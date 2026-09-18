@@ -16,7 +16,7 @@ export async function GET(request, { params }) {
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { id } = await params;
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
 
   const { data: bus, error: busError } = await supabase
     .from('buses')

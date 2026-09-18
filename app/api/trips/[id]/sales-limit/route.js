@@ -20,7 +20,7 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: 'O limite deve ser um número inteiro igual ou superior a zero.' }, { status: 400 });
   }
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
   const { data, error } = await supabase.rpc('set_trip_sales_capacity_limit', {
     p_trip_id: id,
     p_limit: limit,

@@ -31,7 +31,7 @@ export async function POST(request, { params }) {
     return sendError(400, 'Selecione Dinheiro ou TPA como método de pagamento da multa');
   }
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
 
   try {
     const { data: ticket, error: ticketError } = await supabase

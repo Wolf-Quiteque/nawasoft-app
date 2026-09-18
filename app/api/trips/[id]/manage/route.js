@@ -30,7 +30,7 @@ export async function GET(request, { params }) {
   const auth = await requireStaff();
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
   try {
     const run = await loadRun(supabase, id);
     if (!run) return NextResponse.json({ error: 'Viagem não encontrada.' }, { status: 404 });
@@ -77,7 +77,7 @@ export async function POST(request, { params }) {
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
 
   const calls = {
     cancel: ['nawasoft_cancel_empty_run', { p_trip_id: id }],
