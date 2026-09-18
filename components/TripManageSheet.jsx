@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bus, Clock3, Merge, Trash2, ChevronLeft } from 'lucide-react';
+import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { formatTime } from '@/lib/format';
+import AddBoardingPoints from '@/components/AddBoardingPoints';
+import UnifyRuns from '@/components/UnifyRuns';
 
 function localInput(iso) {
   if (!iso) return '';
@@ -23,18 +24,17 @@ function toIso(value) {
 
 const actions = [
   { id: 'times', title: 'Editar horários', detail: 'Altere partida e chegada de cada percurso.', icon: Clock3 },
-  { id: 'bus', title: 'Trocar autocarro', detail: 'Mantém assentos válidos e corrige os restantes.', icon: Bus },
-  { id: 'merge', title: 'Juntar noutra viagem', detail: 'Move os passageiros para um único autocarro.', icon: Merge },
+  { id: 'legs', title: 'Adicionar embarque', detail: 'Mais pontos de embarque neste autocarro, com os mesmos lugares.', icon: MapPinPlus },
+  { id: 'bus', title: 'Trocar autocarro', detail: 'Passa a viagem e os passageiros para outro autocarro livre.', icon: Bus },
+  { id: 'merge', title: 'Juntar noutra viagem', detail: 'Une os passageiros com outro autocarro que tenha lugares.', icon: Merge },
   { id: 'cancel', title: 'Eliminar viagem', detail: 'Disponível apenas quando não há passageiros.', icon: Trash2, danger: true },
 ];
 
 export default function TripManageSheet({ open, onClose, tripId, run, onChanged, toast }) {
   const [screen, setScreen] = useState('menu');
   const [options, setOptions] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busId, setBusId] = useState('');
-  const [targetId, setTargetId] = useState('');
   const [legs, setLegs] = useState([]);
 
   useEffect(() => {
@@ -42,26 +42,27 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
     setScreen('menu');
     setOptions(null);
     setBusId('');
-    setTargetId('');
     setLegs((run?.legs || []).map((leg) => ({
       trip_id: leg.trip_id,
       label: `${leg.origin_city} → ${leg.destination_city}`,
       departure: localInput(leg.departure_time),
       arrival: localInput(leg.arrival_time),
     })));
-    setLoading(true);
     fetch(`/api/trips/${tripId}/manage`, { cache: 'no-store' })
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Falha ao carregar opções.');
         setOptions(body);
       })
-      .catch((error) => toast(error.message, 'error'))
-      .finally(() => setLoading(false));
+      .catch((error) => toast(error.message, 'error'));
   }, [open, tripId, run, toast]);
 
   const selectedBus = useMemo(() => options?.buses?.find((bus) => bus.id === busId), [options, busId]);
-  const selectedTarget = useMemo(() => options?.merge_candidates?.find((item) => item.trip_id === targetId), [options, targetId]);
+
+  const finish = (action) => {
+    onClose();
+    onChanged?.(action);
+  };
 
   const submit = async (action, extra = {}) => {
     setSaving(true);
@@ -76,12 +77,10 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
       const messages = {
         update_times: 'Horários atualizados com sucesso.',
         replace_bus: changed ? `Autocarro trocado. ${changed} passageiro(s) receberam novo assento.` : 'Autocarro trocado; todos os assentos foram mantidos.',
-        merge: changed ? `Viagens unidas. ${changed} passageiro(s) receberam novo assento.` : 'Viagens unidas; os assentos foram mantidos.',
         cancel: 'Viagem eliminada com sucesso.',
       };
       toast(messages[action], 'success');
-      onClose();
-      onChanged?.(action);
+      finish(action);
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -133,6 +132,10 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
         </div>
       ) : null}
 
+      {screen === 'legs' ? (
+        <AddBoardingPoints tripId={tripId} toast={toast} onDone={() => finish('legs')} />
+      ) : null}
+
       {screen === 'bus' ? (
         <div className="space-y-3 pb-5">
           <p className="text-sm text-muted-foreground">Atual: <strong className="text-foreground">{run?.bus?.license_plate}</strong> · {run?.sold} passageiros. O sistema mantém cada assento quando existir no novo autocarro.</p>
@@ -146,20 +149,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
       ) : null}
 
       {screen === 'merge' ? (
-        <div className="space-y-3 pb-5">
-          <p className="text-sm text-muted-foreground">Escolha outra viagem do mesmo dia. Só aparecem autocarros com os mesmos percursos; a capacidade total é confirmada novamente na base de dados.</p>
-          {loading ? <p className="text-sm text-muted-foreground">A procurar viagens…</p> : null}
-          {(options?.merge_candidates || []).map((candidate) => (
-            <button key={candidate.trip_id} onClick={() => setTargetId(candidate.trip_id)} className="w-full text-left">
-              <Card className={`p-3 ${targetId === candidate.trip_id ? 'ring-2 ring-primary' : ''}`}>
-                <div className="flex items-center justify-between"><strong>{candidate.bus?.license_plate}</strong><span className="text-xs">{formatTime(candidate.departure_time)}</span></div>
-                <p className={`mt-1 text-xs ${candidate.remaining_after_merge < 0 ? 'text-danger' : 'text-muted-foreground'}`}>{candidate.sold} já vendidos · {candidate.remaining_after_merge >= 0 ? `${candidate.remaining_after_merge} livres depois de juntar` : 'não tem capacidade'}</p>
-              </Card>
-            </button>
-          ))}
-          {!loading && !options?.merge_candidates?.length ? <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">Não há outra viagem compatível neste dia.</p> : null}
-          <Button className="w-full" loading={saving} disabled={!targetId || selectedTarget?.remaining_after_merge < 0} onClick={() => submit('merge', { target_trip_id: targetId })}>Juntar passageiros</Button>
-        </div>
+        <UnifyRuns tripId={tripId} run={run} toast={toast} onDone={() => finish('merge')} />
       ) : null}
 
       {screen === 'cancel' ? (
