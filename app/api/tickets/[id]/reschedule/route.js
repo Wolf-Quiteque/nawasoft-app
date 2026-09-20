@@ -1,142 +1,70 @@
 import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
-import { isSellableSeat } from '@/lib/seats';
-import { REBOOKING_FEE_PERCENT, rebookingFeeAmount } from '@/lib/rebooking-fee';
-import { seatIsTaken, recomputeSiblingsAvailableSeats } from '@/lib/ticket-rebooking';
+import { rebookErrorMessage, rebookErrorStatus } from '@/lib/rebooking';
 
-function sendError(status, message) {
-  return NextResponse.json({ error: message }, { status });
-}
-
-// POST { new_trip_id, new_seat_number, apply_rebooking_fee, rebooking_fee_payment_method }
-// Moves a paid, active, not-yet-boarded ticket to a new trip/seat, optionally
-// collecting the rebooking multa (currently 60% of the fare paid).
+// POST { new_trip_id, new_seat_number, payment_method, waive_fee, waiver_reason,
+//        idempotency_key, dry_run }
+//
+// Every rule — free window, multa, fare difference, the cap of three, seat and
+// route checks — lives in `rebook_ticket` (admin-app migration
+// 20260920_rebooking_engine.sql). This route only carries the request there and
+// translates the answer; it never computes an amount, so nothing an admin sends
+// from the browser can change what is charged.
+//
+// `dry_run: true` returns the quote to show before confirming.
 export async function POST(request, { params }) {
   const auth = await requireStaff();
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  if (auth.profile.role !== 'admin') {
+    return NextResponse.json({ error: 'Só administradores podem reprogramar no NAWASOFT.' }, { status: 403 });
+  }
 
   const { id: ticket_id } = await params;
   const payload = await request.json().catch(() => ({}));
-  const { new_trip_id, new_seat_number, apply_rebooking_fee = false, rebooking_fee_payment_method = null } = payload;
+  const {
+    new_trip_id,
+    new_seat_number,
+    payment_method = null,
+    waive_fee = false,
+    waiver_reason = null,
+    idempotency_key = null,
+    dry_run = false,
+  } = payload;
 
   if (!new_trip_id || new_seat_number == null) {
-    return sendError(400, 'new_trip_id e new_seat_number são obrigatórios');
-  }
-
-  const seatNum = Number(new_seat_number);
-  const shouldCollectFee = apply_rebooking_fee === true;
-  const allowedFeeMethods = ['cash', 'tpa'];
-  if (shouldCollectFee && !allowedFeeMethods.includes(rebooking_fee_payment_method)) {
-    return sendError(400, 'Selecione Dinheiro ou TPA como método de pagamento da multa');
+    return NextResponse.json({ error: 'new_trip_id e new_seat_number são obrigatórios' }, { status: 400 });
   }
 
   const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
 
-  try {
-    const { data: ticket, error: ticketError } = await supabase
-      .from('tickets')
-      .select(
-        `id, trip_id, seat_number, seat_class, price_paid_usd, status, payment_status, ticket_number,
-         trip:trips!inner(id, route_id, bus_id, departure_time, seat_class, route:routes!inner(origin_city, destination_city))`
-      )
-      .eq('id', ticket_id)
-      .maybeSingle();
-    if (ticketError) throw ticketError;
-    if (!ticket) return sendError(404, 'Bilhete não encontrado');
+  const { data, error } = await supabase.rpc('rebook_ticket', {
+    p_ticket_id: ticket_id,
+    p_new_trip_id: new_trip_id,
+    p_new_seat_number: Number(new_seat_number),
+    p_channel: 'nawasoft',
+    p_actor_user_id: auth.user.id,
+    p_idempotency_key: dry_run ? null : idempotency_key,
+    p_payment_method: payment_method,
+    p_waive_fee: waive_fee === true,
+    p_waiver_reason: waiver_reason,
+    p_dry_run: dry_run === true,
+  });
 
-    if (ticket.status !== 'active') return sendError(409, 'Só é possível reprogramar bilhetes ativos');
-    if (ticket.payment_status !== 'paid') return sendError(409, 'Só é possível reprogramar bilhetes com pagamento confirmado');
-
-    const { data: scans, error: scanError } = await supabase
-      .from('ticket_scans')
-      .select('id')
-      .eq('ticket_id', ticket_id)
-      .eq('scan_type', 'boarding');
-    if (scanError) throw scanError;
-    if (scans && scans.length > 0) return sendError(409, 'Bilhete já embarcou — não é possível reprogramar');
-
-    const oldTripId = ticket.trip_id;
-    const oldBusId = ticket.trip?.bus_id;
-    const oldDepartureTime = ticket.trip?.departure_time;
-
-    const { data: newTrip, error: tripError } = await supabase
-      .from('trips')
-      .select('id, route_id, bus_id, departure_time, seat_class, status')
-      .eq('id', new_trip_id)
-      .maybeSingle();
-    if (tripError) throw tripError;
-    if (!newTrip) return sendError(404, 'Viagem de destino não encontrada');
-    if (newTrip.status !== 'scheduled') return sendError(409, 'A viagem de destino não está programada');
-
-    const { data: newBus, error: busError } = await supabase
-      .from('buses')
-      .select('capacity')
-      .eq('id', newTrip.bus_id)
-      .maybeSingle();
-    if (busError) throw busError;
-    const newCapacity = newBus?.capacity || 0;
-    if (!isSellableSeat(seatNum, newCapacity)) {
-      return sendError(400, `Assento ${seatNum} não é válido para este autocarro (capacidade ${newCapacity})`);
-    }
-
-    const conflict = await seatIsTaken(supabase, new_trip_id, seatNum, ticket_id);
-    if (conflict) return sendError(409, `O assento ${seatNum} já está ocupado nesta viagem`);
-
-    const { data: moved, error: moveError } = await supabase
-      .from('tickets')
-      .update({ trip_id: new_trip_id, seat_number: seatNum, seat_class: newTrip.seat_class || ticket.seat_class })
-      .eq('id', ticket_id)
-      .select()
-      .maybeSingle();
-    if (moveError) {
-      if (moveError.message?.includes('already booked') || moveError.code === '23505') {
-        return sendError(409, `O assento ${seatNum} já está ocupado nesta viagem`);
-      }
-      throw moveError;
-    }
-
-    let rebookingFee = null;
-    if (shouldCollectFee) {
-      const baseAmount = Number(ticket.price_paid_usd) || 0;
-      const feeAmount = rebookingFeeAmount(baseAmount);
-      const { data: fee, error: feeError } = await supabase
-        .from('ticket_rebooking_fees')
-        .insert({
-          ticket_id,
-          old_trip_id: oldTripId,
-          new_trip_id,
-          percentage: REBOOKING_FEE_PERCENT,
-          base_amount_kz: baseAmount,
-          amount_kz: feeAmount,
-          payment_method: rebooking_fee_payment_method,
-          collected_by: auth.user.id,
-        })
-        .select()
-        .single();
-
-      if (feeError) {
-        await supabase
-          .from('tickets')
-          .update({ trip_id: oldTripId, seat_number: ticket.seat_number, seat_class: ticket.seat_class })
-          .eq('id', ticket_id);
-        throw feeError;
-      }
-      rebookingFee = fee;
-    }
-
-    if (oldTripId && oldBusId && oldDepartureTime) {
-      await recomputeSiblingsAvailableSeats(supabase, oldTripId, oldBusId, oldDepartureTime);
-    }
-
-    return NextResponse.json({
-      message: shouldCollectFee
-        ? `Bilhete reprogramado e multa de ${REBOOKING_FEE_PERCENT}% registada com sucesso.`
-        : 'Bilhete reprogramado com sucesso. O assento anterior foi libertado.',
-      ticket: moved,
-      rebooking_fee: rebookingFee,
-    });
-  } catch (err) {
-    return sendError(500, err.message || 'Erro ao reprogramar bilhete');
+  if (error) {
+    const { code, message } = rebookErrorMessage(error);
+    return NextResponse.json({ error: message, code }, { status: rebookErrorStatus(code) });
   }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return NextResponse.json({ error: 'Sem resposta do servidor.' }, { status: 500 });
+  if (dry_run) return NextResponse.json({ quote: row });
+
+  const paid = Number(row.total_kz) || 0;
+  return NextResponse.json({
+    message: paid > 0
+      ? `Bilhete reprogramado. Cobrados ${paid.toLocaleString('pt-AO')} Kz · recibo ${row.receipt_number}.`
+      : 'Bilhete reprogramado sem custo. O assento anterior foi libertado.',
+    rebook: row,
+  });
 }

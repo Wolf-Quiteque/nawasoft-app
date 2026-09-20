@@ -6,6 +6,8 @@ const LABELS = {
   refunded: 'Reembolsado',
   cancelled: 'Cancelado',
   pending: 'Pendente',
+  // Missed the bus and past its validity. Still reprogrammable, with multa.
+  expired: 'Expirado',
 };
 
 const TONES = {
@@ -14,6 +16,7 @@ const TONES = {
   refunded: 'danger',
   cancelled: 'neutral',
   pending: 'warning',
+  expired: 'warning',
 };
 
 export default function TicketStatusBadge({ status }) {

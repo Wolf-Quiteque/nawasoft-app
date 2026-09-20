@@ -10,6 +10,7 @@ import {
   shareOneSeatPool,
   TIME_PATTERN,
 } from '@/lib/trip-schedule';
+import { MAX_PRICE_KZ, priceInvalid, readPrice, tripPrices } from '@/lib/trip-price';
 
 const ACTIVE = ['scheduled', 'boarding'];
 const CLASS_MULTIPLIER = { economy: 1, business: 1.5, first: 2 };
@@ -42,6 +43,7 @@ export async function GET() {
   return NextResponse.json({
     companies: companies.data || [], buses: buses.data || [], routes: routes.data || [], drivers: drivers.data || [],
     default_company_id: companyId || companies.data?.[0]?.id || null,
+    viewer_role: auth.profile.role,
   });
 }
 
@@ -69,11 +71,21 @@ export async function POST(request) {
   if (!weekday_offsets || Array.isArray(weekday_offsets) || typeof weekday_offsets !== 'object' || Object.entries(weekday_offsets).some(([day, offset]) => !/^[0-6]$/.test(day) || !Number.isFinite(Number(offset)) || Number(offset) < -720 || Number(offset) > 720)) return NextResponse.json({ error: 'Os ajustes diários devem ficar entre -12 e 12 horas.' }, { status: 400 });
   if (!Array.isArray(legs) || !legs.length || legs.length > 20 || !Array.isArray(return_legs) || return_legs.length > 20 || (round_trip && !return_legs.length)) return NextResponse.json({ error: 'Adicione os percursos da ida e, se necessário, do regresso.' }, { status: 400 });
 
+  // Creating trips at the route's default price is ordinary staff work;
+  // setting a different price is not, so that alone requires an admin.
+  const overridesPrice = [...legs, ...return_legs].some(
+    (leg) => readPrice(leg?.price_kz) !== null || readPrice(leg?.online_price_kz) !== null
+  );
+  if (overridesPrice && auth.profile.role !== 'admin') {
+    return NextResponse.json({ error: 'Só administradores podem definir um preço diferente do preço base da rota.' }, { status: 403 });
+  }
+
   const groups = [['ida', legs], ['regresso', round_trip ? return_legs : []]];
   for (const [label, items] of groups) {
     if (new Set(items.map((leg) => leg.route_id)).size !== items.length) return NextResponse.json({ error: `Não repita rotas de ${label}.` }, { status: 400 });
     for (const leg of items) {
       if (!leg.route_id || !TIME_PATTERN.test(leg.departure_time || '') || !Number.isInteger(leg.duration_minutes) || leg.duration_minutes < 1 || leg.duration_minutes > 10080) return NextResponse.json({ error: `Revise rota, hora e duração de ${label}.` }, { status: 400 });
+      if (priceInvalid(leg.price_kz) || priceInvalid(leg.online_price_kz)) return NextResponse.json({ error: `Revise os preços de ${label} (entre 0 e ${MAX_PRICE_KZ.toLocaleString('pt-AO')} Kz).` }, { status: 400 });
     }
     if (items.length) {
       const sample = items.map((leg) => {
@@ -103,11 +115,20 @@ export async function POST(request) {
     for (const leg of items) {
       const departure = departureFor(date, leg.departure_time, offset);
       const route = routeById.get(leg.route_id);
+      // The counter (Sunmi) price falls back to the route's base price; the
+      // online price falls back to null, which every client reads as "same as
+      // the counter". A campaign trip is free on both.
+      const prices = tripPrices({
+        priceKz: leg.price_kz,
+        onlinePriceKz: leg.online_price_kz,
+        basePrice: Number(route.base_price_usd) * CLASS_MULTIPLIER[seat_class],
+        isCampaign: is_campaign,
+      });
       planned.push({
         service_date: date, run_key: `${cycleDate}:${direction}`, route_id: leg.route_id, bus_id, driver_id, company_id,
         departure_time: departure.toISOString(), arrival_time: new Date(departure.getTime() + leg.duration_minutes * 60_000).toISOString(),
         seat_class, status: 'scheduled', is_campaign,
-        price_usd: is_campaign ? 0 : Number(route.base_price_usd) * CLASS_MULTIPLIER[seat_class],
+        ...prices,
         route,
       });
     }
@@ -153,6 +174,7 @@ export async function POST(request) {
     date: trip.service_date, direction: trip.run_key.endsWith(':ida') ? 'Ida' : 'Regresso',
     route: `${trip.route.origin_city} → ${trip.route.destination_city}`,
     departure_time: trip.departure_time, arrival_time: trip.arrival_time,
+    price_usd: trip.price_usd, online_price_kz: trip.online_price_kz,
   }));
   const result = { valid: conflicts.length === 0, created: toCreate.length, skipped: planned.length - toCreate.length, total: planned.length, conflicts: conflicts.slice(0, 50), preview: previewRows };
   if (dry_run) return NextResponse.json(result);

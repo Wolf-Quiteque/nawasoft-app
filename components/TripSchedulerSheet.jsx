@@ -8,7 +8,8 @@ import { Card } from '@/components/ui/Card';
 import { todayInLuanda, formatDateTime } from '@/lib/format';
 
 const DAYS = [{ n: 1, s: 'Seg' }, { n: 2, s: 'Ter' }, { n: 3, s: 'Qua' }, { n: 4, s: 'Qui' }, { n: 5, s: 'Sex' }, { n: 6, s: 'Sáb' }, { n: 0, s: 'Dom' }];
-const blankLeg = (stableKey = null) => ({ key: stableKey || crypto.randomUUID(), route_id: '', departure_time: '18:00', duration_hours: '10' });
+const blankLeg = (stableKey = null) => ({ key: stableKey || crypto.randomUUID(), route_id: '', departure_time: '18:00', duration_hours: '10', price_kz: '', online_price_kz: '' });
+const fmtKz = (value) => Number(value || 0).toLocaleString('pt-AO');
 
 function addCalendarMonths(date, months) {
   const value = new Date(`${date}T12:00:00Z`);
@@ -16,8 +17,13 @@ function addCalendarMonths(date, months) {
   return value.toISOString().slice(0, 10);
 }
 
-function LegEditor({ title, legs, setLegs, routes }) {
+function LegEditor({ title, legs, setLegs, routes, canPrice }) {
   const patchLeg = (key, values) => setLegs((items) => items.map((item) => item.key === key ? { ...item, ...values } : item));
+  // Shown as the placeholder so it is clear what a blank field will charge.
+  const basePriceOf = (routeId) => {
+    const route = routes.find((item) => item.id === routeId);
+    return route ? fmtKz(route.base_price_usd) : 'preço base';
+  };
   return (
     <div>
       <div className="mb-2 flex items-center justify-between"><p className="text-sm font-bold">{title}</p><button type="button" className="flex items-center gap-1 text-xs font-semibold text-primary" onClick={() => setLegs((items) => [...items, blankLeg()])}><Plus size={13} /> Rota</button></div>
@@ -35,6 +41,11 @@ function LegEditor({ title, legs, setLegs, routes }) {
               <label className="text-[11px] text-muted-foreground">Partida<input type="time" value={leg.departure_time} onChange={(event) => patchLeg(leg.key, { departure_time: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-border bg-surface px-2 text-sm" /></label>
               <label className="text-[11px] text-muted-foreground">Duração (horas)<input type="number" min="0.25" step="0.25" value={leg.duration_hours} onChange={(event) => patchLeg(leg.key, { duration_hours: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-border bg-surface px-2 text-sm" /></label>
             </div>
+            {canPrice ? <><div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="text-[11px] text-muted-foreground">Preço balcão / Sunmi (Kz)<input type="number" min="0" step="100" value={leg.price_kz} placeholder={basePriceOf(leg.route_id)} onChange={(event) => patchLeg(leg.key, { price_kz: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-border bg-surface px-2 text-sm" /></label>
+              <label className="text-[11px] text-muted-foreground">Preço online (Kz)<input type="number" min="0" step="100" value={leg.online_price_kz} placeholder={leg.price_kz ? fmtKz(leg.price_kz) : basePriceOf(leg.route_id)} onChange={(event) => patchLeg(leg.key, { online_price_kz: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-border bg-surface px-2 text-sm" /></label>
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground">Em branco usa o preço base da rota. O preço online só difere se o escrever.</p></> : null}
           </Card>
         ))}
       </div>
@@ -78,13 +89,24 @@ export default function TripSchedulerSheet({ open, onClose, onScheduled, toast }
   const drivers = useMemo(() => (options?.drivers || []).filter((item) => !companyId || !item.company_id || item.company_id === companyId), [options, companyId]);
   const routes = useMemo(() => (options?.routes || []).filter((item) => !companyId || item.company_id === companyId), [options, companyId]);
 
+  const legPayload = (leg) => ({
+    route_id: leg.route_id,
+    departure_time: leg.departure_time,
+    duration_minutes: Math.round(Number(leg.duration_hours) * 60),
+    price_kz: leg.price_kz === '' ? null : Number(leg.price_kz),
+    online_price_kz: leg.online_price_kz === '' ? null : Number(leg.online_price_kz),
+  });
+
+  // Only an admin may charge something other than the route's base price.
+  const canPrice = options?.viewer_role === 'admin';
+
   const payload = (dryRun) => ({
     company_id: companyId, bus_id: busId, driver_id: driverId, start_date: startDate, end_date: endDate,
     recurrence_mode: mode, weekdays, interval_days: Number(intervalDays),
     weekday_offsets: Object.fromEntries(Object.entries(offsets).map(([day, hours]) => [day, Math.round(Number(hours || 0) * 60)])),
     seat_class: 'economy', is_campaign: false, round_trip: roundTrip, return_day_offset: Number(returnDayOffset), dry_run: dryRun,
-    legs: legs.map((leg) => ({ route_id: leg.route_id, departure_time: leg.departure_time, duration_minutes: Math.round(Number(leg.duration_hours) * 60) })),
-    return_legs: roundTrip ? returnLegs.map((leg) => ({ route_id: leg.route_id, departure_time: leg.departure_time, duration_minutes: Math.round(Number(leg.duration_hours) * 60) })) : [],
+    legs: legs.map(legPayload),
+    return_legs: roundTrip ? returnLegs.map(legPayload) : [],
   });
 
   const submit = async (dryRun) => {
@@ -127,11 +149,11 @@ export default function TripSchedulerSheet({ open, onClose, onScheduled, toast }
           <details className="mt-2 rounded-xl bg-muted p-3"><summary className="cursor-pointer text-xs font-semibold">Horário especial por dia</summary><p className="mt-1 text-[11px] text-muted-foreground">Use -1 para sair uma hora antes, por exemplo aos domingos.</p><div className="mt-2 grid grid-cols-4 gap-2">{DAYS.map((day) => <label key={day.n} className="text-[10px] text-muted-foreground">{day.s}<input type="number" step="0.5" value={offsets[day.n] ?? 0} onChange={(event) => setOffsets((value) => ({ ...value, [day.n]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs" /></label>)}</div></details>
         </div>
 
-        <LegEditor title="Percursos de ida — mesmo autocarro" legs={legs} setLegs={setLegs} routes={routes} />
+        <LegEditor title="Percursos de ida — mesmo autocarro" legs={legs} setLegs={setLegs} routes={routes} canPrice={canPrice} />
         <label className="flex items-center gap-2 rounded-xl bg-muted p-3 text-sm font-semibold"><input type="checkbox" checked={roundTrip} onChange={(event) => setRoundTrip(event.target.checked)} /> Programar regresso no mesmo autocarro</label>
-        {roundTrip ? <><label className="block text-xs text-muted-foreground">O regresso começa quantos dias depois?<input type="number" min="0" max="7" value={returnDayOffset} onChange={(event) => setReturnDayOffset(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm" /></label><LegEditor title="Percursos de regresso" legs={returnLegs} setLegs={setReturnLegs} routes={routes} /></> : null}
+        {roundTrip ? <><label className="block text-xs text-muted-foreground">O regresso começa quantos dias depois?<input type="number" min="0" max="7" value={returnDayOffset} onChange={(event) => setReturnDayOffset(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm" /></label><LegEditor title="Percursos de regresso" legs={returnLegs} setLegs={setReturnLegs} routes={routes} canPrice={canPrice} /></> : null}
 
-        {preview ? <Card className="p-3"><div className="mb-2 flex items-center gap-2"><CalendarPlus size={16} className="text-success" /><p className="text-sm font-bold">{preview.total} percursos · {preview.created} novos · {preview.skipped} existentes</p></div><div className="max-h-52 overflow-auto rounded-xl border border-border"><table className="w-full text-left text-[11px]"><thead className="sticky top-0 bg-muted"><tr><th className="p-2">Dia</th><th className="p-2">Viagem</th><th className="p-2">Partida</th></tr></thead><tbody>{preview.preview?.map((row, index) => <tr key={`${row.departure_time}-${index}`} className="border-t border-border"><td className="p-2">{row.date}</td><td className="p-2">{row.direction}<br />{row.route}</td><td className="p-2">{formatDateTime(row.departure_time)}</td></tr>)}</tbody></table></div></Card> : null}
+        {preview ? <Card className="p-3"><div className="mb-2 flex items-center gap-2"><CalendarPlus size={16} className="text-success" /><p className="text-sm font-bold">{preview.total} percursos · {preview.created} novos · {preview.skipped} existentes</p></div><div className="max-h-52 overflow-auto rounded-xl border border-border"><table className="w-full text-left text-[11px]"><thead className="sticky top-0 bg-muted"><tr><th className="p-2">Dia</th><th className="p-2">Viagem</th><th className="p-2">Partida</th><th className="p-2">Preço</th></tr></thead><tbody>{preview.preview?.map((row, index) => <tr key={`${row.departure_time}-${index}`} className="border-t border-border"><td className="p-2">{row.date}</td><td className="p-2">{row.direction}<br />{row.route}</td><td className="p-2">{formatDateTime(row.departure_time)}</td><td className="p-2">{fmtKz(row.price_usd)}{row.online_price_kz != null && Number(row.online_price_kz) !== Number(row.price_usd) ? <><br /><span className="text-muted-foreground">online {fmtKz(row.online_price_kz)}</span></> : null}</td></tr>)}</tbody></table></div></Card> : null}
 
         <div className="grid grid-cols-2 gap-2"><Button variant="secondary" loading={busy} disabled={!companyId || !busId || !driverId} onClick={() => submit(true)}>Pré-visualizar</Button><Button loading={busy} disabled={!preview?.valid || preview.signature !== JSON.stringify(payload(false))} onClick={() => submit(false)}>Criar viagens</Button></div>
       </div>

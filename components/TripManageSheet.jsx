@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus } from 'lucide-react';
+import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus, Tag } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -24,6 +24,7 @@ function toIso(value) {
 
 const actions = [
   { id: 'times', title: 'Editar horários', detail: 'Altere partida e chegada de cada percurso.', icon: Clock3 },
+  { id: 'prices', title: 'Alterar preços', detail: 'Preço de balcão/Sunmi e preço online de cada percurso.', icon: Tag },
   { id: 'legs', title: 'Adicionar embarque', detail: 'Mais pontos de embarque neste autocarro, com os mesmos lugares.', icon: MapPinPlus },
   { id: 'bus', title: 'Trocar autocarro', detail: 'Passa a viagem e os passageiros para outro autocarro livre.', icon: Bus },
   { id: 'merge', title: 'Juntar noutra viagem', detail: 'Une os passageiros com outro autocarro que tenha lugares.', icon: Merge },
@@ -36,12 +37,21 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
   const [saving, setSaving] = useState(false);
   const [busId, setBusId] = useState('');
   const [legs, setLegs] = useState([]);
+  const [prices, setPrices] = useState([]);
 
   useEffect(() => {
     if (!open) return;
     setScreen('menu');
     setOptions(null);
     setBusId('');
+    setPrices((run?.legs || []).map((leg) => ({
+      trip_id: leg.trip_id,
+      label: `${leg.origin_city} → ${leg.destination_city}`,
+      sold: leg.sold,
+      base_price_usd: leg.base_price_usd,
+      price_kz: leg.price_usd == null ? '' : String(leg.price_usd),
+      online_price_kz: leg.online_price_kz == null ? '' : String(leg.online_price_kz),
+    })));
     setLegs((run?.legs || []).map((leg) => ({
       trip_id: leg.trip_id,
       label: `${leg.origin_city} → ${leg.destination_city}`,
@@ -78,6 +88,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
         update_times: 'Horários atualizados com sucesso.',
         replace_bus: changed ? `Autocarro trocado. ${changed} passageiro(s) receberam novo assento.` : 'Autocarro trocado; todos os assentos foram mantidos.',
         cancel: 'Viagem eliminada com sucesso.',
+        update_prices: 'Preços atualizados. Os bilhetes já vendidos mantêm o preço pago.',
       };
       toast(messages[action], 'success');
       finish(action);
@@ -99,7 +110,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
       {screen === 'menu' ? (
         <div className="flex flex-col gap-2 pb-5">
           <p className="mb-1 text-sm text-muted-foreground">As alterações aplicam-se a todos os percursos que partilham este autocarro.</p>
-          {actions.map((action) => {
+          {actions.filter((action) => action.id !== 'prices' || options?.viewer_role === 'admin').map((action) => {
             const Icon = action.icon;
             const disabled = action.id === 'cancel' && run?.sold > 0;
             return (
@@ -129,6 +140,46 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
             </Card>
           ))}
           <Button className="w-full" loading={saving} disabled={legs.some((leg) => !leg.departure || !leg.arrival)} onClick={() => submit('update_times', { legs: legs.map((leg) => ({ trip_id: leg.trip_id, departure_time: toIso(leg.departure), arrival_time: toIso(leg.arrival) })) })}>Guardar horários</Button>
+        </div>
+      ) : null}
+
+      {screen === 'prices' ? (
+        <div className="space-y-3 pb-5">
+          <p className="text-sm text-muted-foreground">
+            O preço online em branco significa <strong className="text-foreground">igual ao balcão</strong>. Bilhetes já vendidos mantêm o preço que pagaram.
+          </p>
+          {prices.map((leg, index) => (
+            <Card key={leg.trip_id} className="p-3">
+              <p className="mb-2 text-sm font-bold">{leg.label}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[11px] text-muted-foreground">
+                  Balcão / Sunmi (Kz)
+                  <input
+                    type="number" min="0" step="100" value={leg.price_kz}
+                    onChange={(event) => setPrices((items) => items.map((item, i) => i === index ? { ...item, price_kz: event.target.value } : item))}
+                    className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm"
+                  />
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  Online (Kz)
+                  <input
+                    type="number" min="0" step="100" value={leg.online_price_kz}
+                    placeholder={leg.price_kz || 'igual ao balcão'}
+                    onChange={(event) => setPrices((items) => items.map((item, i) => i === index ? { ...item, online_price_kz: event.target.value } : item))}
+                    className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm"
+                  />
+                </label>
+              </div>
+              {leg.sold > 0 ? <p className="mt-1.5 text-[10px] text-muted-foreground">{leg.sold} bilhete(s) já vendido(s) neste percurso.</p> : null}
+            </Card>
+          ))}
+          <Button
+            className="w-full" loading={saving}
+            disabled={prices.some((leg) => leg.price_kz === '')}
+            onClick={() => submit('update_prices', { prices: prices.map((leg) => ({ trip_id: leg.trip_id, price_kz: leg.price_kz, online_price_kz: leg.online_price_kz })) })}
+          >
+            Guardar preços
+          </Button>
         </div>
       ) : null}
 

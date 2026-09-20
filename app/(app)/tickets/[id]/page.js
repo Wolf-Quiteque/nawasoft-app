@@ -111,7 +111,14 @@ export default function TicketDetailPage() {
     : 'Passageiro';
 
   const canRefund = ['active', 'used'].includes(ticket.status) && ticket.payment_status === 'paid';
-  const canReschedule = ticket.status === 'active' && ticket.payment_status === 'paid';
+  // Agents reprogram on the Sunmi terminal; in NAWASOFT it is an admin action
+  // and the API refuses anyone else.
+  // An expired ticket (a no-show) is precisely the one that needs reprogramming
+  // — that is how the passenger pays the multa and gets back onto a bus.
+  const canReschedule =
+    ['active', 'expired'].includes(ticket.status)
+    && ticket.payment_status === 'paid'
+    && data?.viewer_role === 'admin';
 
   return (
     <div>

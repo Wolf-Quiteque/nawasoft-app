@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireStaff } from '@/lib/auth';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
-import { loadRun } from '@/lib/trip-run-detail';
+import { loadRun, getRunTripIds } from '@/lib/trip-run-detail';
+import { MAX_PRICE_KZ, readPrice } from '@/lib/trip-price';
 import { loadTrips } from '@/lib/queries/trips';
 
 function localDate(iso) {
@@ -66,6 +67,7 @@ export async function GET(request, { params }) {
       run,
       buses: (buses || []).filter((bus) => bus.id !== run.bus?.id),
       merge_candidates: mergeCandidates,
+      viewer_role: auth.profile.role,
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -78,6 +80,42 @@ export async function POST(request, { params }) {
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
+
+  // Prices are money, so only an admin may change them — and only on trips that
+  // belong to this run, never an arbitrary trip id sent from the browser.
+  // Tickets already sold keep the price they were sold at.
+  if (body.action === 'update_prices') {
+    if (auth.profile.role !== 'admin') {
+      return NextResponse.json({ error: 'Só administradores podem alterar preços.' }, { status: 403 });
+    }
+    if (!Array.isArray(body.prices) || !body.prices.length) {
+      return NextResponse.json({ error: 'Indique os preços a guardar.' }, { status: 400 });
+    }
+    const runTripIds = new Set(await getRunTripIds(supabase, id));
+    const updates = [];
+    for (const entry of body.prices) {
+      if (!runTripIds.has(entry?.trip_id)) {
+        return NextResponse.json({ error: 'Percurso fora desta viagem.' }, { status: 400 });
+      }
+      const counter = readPrice(entry.price_kz);
+      const online = readPrice(entry.online_price_kz);
+      if (counter === undefined || online === undefined) {
+        return NextResponse.json({ error: `Preço inválido (entre 0 e ${MAX_PRICE_KZ.toLocaleString('pt-AO')} Kz).` }, { status: 400 });
+      }
+      if (counter === null) {
+        return NextResponse.json({ error: 'O preço de balcão é obrigatório.' }, { status: 400 });
+      }
+      updates.push({ trip_id: entry.trip_id, price_usd: counter, online_price_kz: online });
+    }
+    for (const update of updates) {
+      const { error } = await supabase
+        .from('trips')
+        .update({ price_usd: update.price_usd, online_price_kz: update.online_price_kz })
+        .eq('id', update.trip_id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, action: 'update_prices', updated: updates.length });
+  }
 
   const calls = {
     cancel: ['nawasoft_cancel_empty_run', { p_trip_id: id }],

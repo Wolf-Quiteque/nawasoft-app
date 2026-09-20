@@ -41,6 +41,9 @@ export async function GET(request, { params }) {
     ticket: withPassenger,
     itinerary_history: itineraryHistory || [],
     document_accesses: documentAccesses || [],
+    // Lets the page hide actions this viewer cannot take. The routes still
+    // check the role themselves — this is only so the screen matches.
+    viewer_role: auth.profile.role,
   });
 }
 
