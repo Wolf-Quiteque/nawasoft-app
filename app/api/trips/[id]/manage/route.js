@@ -24,6 +24,10 @@ function rpcError(error) {
     [/Bus or driver is already assigned/i, 'O autocarro ou motorista já está ocupado no novo horário.'],
     [/Routes must overlap/i, 'Os horários dos percursos precisam sobrepor-se para partilhar o mesmo autocarro.'],
     [/No leg of this journey leaves from that origin/i, 'Nenhum percurso desta viagem sai dessa origem.'],
+    [/Route has passengers/i, 'Esse percurso ainda tem passageiros. Mova-os primeiro — por exemplo com "Separar por origem" ou reprogramando.'],
+    [/At least one route must stay/i, 'Tem de ficar pelo menos um percurso. Para retirar a viagem toda, use "Eliminar viagem".'],
+    [/Route is not part of this journey/i, 'Esse percurso não pertence a esta viagem.'],
+    [/Choose at least one route/i, 'Escolha pelo menos um percurso.'],
     [/Every leg leaves from that origin/i, 'Todos os percursos saem dessa origem — use "Trocar autocarro".'],
     [/Choose a different bus/i, 'Escolha um autocarro diferente do atual.'],
     [/Choose a driver/i, 'Escolha um motorista para o novo autocarro.'],
@@ -138,6 +142,8 @@ export async function POST(request, { params }) {
     update_times: ['nawasoft_update_run_times', { p_trip_id: id, p_legs: body.legs }],
     replace_bus: ['nawasoft_replace_run_bus', { p_trip_id: id, p_new_bus_id: body.bus_id }],
     merge: ['nawasoft_merge_runs', { p_source_trip_id: id, p_target_trip_id: body.target_trip_id }],
+    // Take empty legs off the bus; the rest keep running.
+    remove_legs: ['nawasoft_remove_run_legs', { p_trip_id: id, p_leg_ids: body.leg_ids }],
     // Move one origin's passengers to another bus, same trips and seats.
     split_origin: ['nawasoft_split_run_origin', {
       p_trip_id: id,
@@ -151,6 +157,9 @@ export async function POST(request, { params }) {
   if (!selected) return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
   if (body.action === 'replace_bus' && !body.bus_id) return NextResponse.json({ error: 'Selecione o novo autocarro.' }, { status: 400 });
   if (body.action === 'merge' && !body.target_trip_id) return NextResponse.json({ error: 'Selecione a viagem de destino.' }, { status: 400 });
+  if (body.action === 'remove_legs' && (!Array.isArray(body.leg_ids) || body.leg_ids.length === 0)) {
+    return NextResponse.json({ error: 'Escolha pelo menos um percurso.' }, { status: 400 });
+  }
   if (body.action === 'split_origin' && (!body.origin_city || !body.bus_id || !body.driver_id)) {
     return NextResponse.json({ error: 'Escolha a origem, o autocarro e o motorista.' }, { status: 400 });
   }

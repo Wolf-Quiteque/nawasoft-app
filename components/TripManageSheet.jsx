@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus, Tag, Split } from 'lucide-react';
+import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus, MapPinOff, Tag, Split } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -27,6 +27,7 @@ const actions = [
   { id: 'prices', title: 'Alterar preços', detail: 'Preço de balcão/Sunmi e preço online de cada percurso.', icon: Tag },
   { id: 'legs', title: 'Adicionar embarque', detail: 'Mais pontos de embarque neste autocarro, com os mesmos lugares.', icon: MapPinPlus },
   { id: 'bus', title: 'Trocar autocarro', detail: 'Passa a viagem e os passageiros para outro autocarro livre.', icon: Bus },
+  { id: 'remove_legs', title: 'Remover percurso', detail: 'Tira percursos sem passageiros deste autocarro; os outros continuam.', icon: MapPinOff },
   { id: 'split', title: 'Separar por origem', detail: 'Passa os passageiros de uma origem para outro autocarro, nos mesmos lugares.', icon: Split },
   { id: 'merge', title: 'Juntar noutra viagem', detail: 'Une os passageiros com outro autocarro que tenha lugares.', icon: Merge },
   { id: 'cancel', title: 'Eliminar viagem', detail: 'Disponível apenas quando não há passageiros.', icon: Trash2, danger: true },
@@ -39,6 +40,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
   const [busId, setBusId] = useState('');
   const [legs, setLegs] = useState([]);
   const [prices, setPrices] = useState([]);
+  const [removeIds, setRemoveIds] = useState([]);
   const [splitOrigin, setSplitOrigin] = useState('');
   const [splitBus, setSplitBus] = useState('');
   const [splitDriver, setSplitDriver] = useState('');
@@ -50,6 +52,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
     setScreen('menu');
     setOptions(null);
     setBusId('');
+    setRemoveIds([]);
     setSplitOrigin('');
     setSplitBus('');
     setSplitDriver('');
@@ -136,6 +139,9 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
         cancel: 'Viagem eliminada com sucesso.',
         update_prices: 'Preços atualizados. Os bilhetes já vendidos mantêm o preço pago.',
       };
+      if (action === 'remove_legs') {
+        messages.remove_legs = `${extra.leg_ids.length} percurso(s) removido(s). Os restantes continuam à venda.`;
+      }
       if (action === 'split_origin') {
         const r = body.result || {};
         messages.split_origin = `${r.passengers} passageiro(s) de ${r.origin} passaram para ${r.new_bus_plate}`
@@ -165,6 +171,7 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
             .filter((action) => action.id !== 'prices' || options?.viewer_role === 'admin')
             // Splitting only makes sense when the bus picks up at more than one place.
             .filter((action) => action.id !== 'split' || origins.length > 1)
+            .filter((action) => action.id !== 'remove_legs' || (run?.legs?.length || 0) > 1)
             .map((action) => {
             const Icon = action.icon;
             const disabled = action.id === 'cancel' && run?.sold > 0;
@@ -240,6 +247,48 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
 
       {screen === 'legs' ? (
         <AddBoardingPoints tripId={tripId} toast={toast} onDone={() => finish('legs')} />
+      ) : null}
+
+      {screen === 'remove_legs' ? (
+        <div className="space-y-3 pb-5">
+          <p className="text-sm text-muted-foreground">
+            Só se removem percursos <strong className="text-foreground">sem passageiros</strong>. Se ainda tiverem, passe-os primeiro
+            para outro autocarro com "Separar por origem" ou reprograme-os.
+          </p>
+          {(run?.legs || []).map((leg) => {
+            const empty = !(Number(leg.sold) > 0);
+            const checked = removeIds.includes(leg.trip_id);
+            return (
+              <label key={leg.trip_id} className={`flex items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 ${empty ? 'cursor-pointer' : 'opacity-60'}`}>
+                <input
+                  type="checkbox"
+                  disabled={!empty}
+                  checked={checked}
+                  onChange={(event) => setRemoveIds((ids) => (event.target.checked ? [...ids, leg.trip_id] : ids.filter((id) => id !== leg.trip_id)))}
+                  className="h-5 w-5 accent-[var(--color-primary)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold">{leg.origin_city} → {leg.destination_city}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {empty ? 'Sem passageiros' : `${leg.sold} passageiro(s) — mova-os primeiro`}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+          {removeIds.length > 0 && removeIds.length >= (run?.legs?.length || 0) ? (
+            <p className="rounded-xl bg-danger/10 p-3 text-xs text-danger">
+              Tem de ficar pelo menos um percurso. Para retirar a viagem toda, use "Eliminar viagem".
+            </p>
+          ) : null}
+          <Button
+            variant="danger" className="w-full" loading={saving}
+            disabled={removeIds.length === 0 || removeIds.length >= (run?.legs?.length || 0)}
+            onClick={() => submit('remove_legs', { leg_ids: removeIds })}
+          >
+            {removeIds.length ? `Remover ${removeIds.length} percurso(s)` : 'Escolha os percursos a remover'}
+          </Button>
+        </div>
       ) : null}
 
       {screen === 'split' ? (
