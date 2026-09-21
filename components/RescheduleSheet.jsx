@@ -285,7 +285,8 @@ export default function RescheduleSheet({ open, onClose, ticket, onSuccess }) {
                   </div>
                 ) : null}
 
-                {quote.feePercent > 0 || waive ? (
+                {/* Offered whenever anything is owed — a fare difference too, not only a multa. */}
+                {quote.totalKz > 0 || waive ? (
                   <div className="mt-3 border-t border-border pt-3">
                     <label className="flex cursor-pointer items-start gap-3">
                       <input
@@ -295,8 +296,8 @@ export default function RescheduleSheet({ open, onClose, ticket, onSuccess }) {
                         className="mt-0.5 h-5 w-5 accent-[var(--color-primary)]"
                       />
                       <div>
-                        <p className="text-sm font-semibold">Perdoar a multa</p>
-                        <p className="text-xs text-muted-foreground">Fica registado no seu nome, com o motivo.</p>
+                        <p className="text-sm font-semibold">Não cobrar (perdoar)</p>
+                        <p className="text-xs text-muted-foreground">Multa e diferença de tarifa ficam a 0 Kz. Fica registado no seu nome, com o motivo.</p>
                       </div>
                     </label>
                     {waive ? (
