@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus, Tag } from 'lucide-react';
+import { Bus, Clock3, Merge, Trash2, ChevronLeft, MapPinPlus, Tag, Split } from 'lucide-react';
 import Sheet from '@/components/ui/Sheet';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -27,6 +27,7 @@ const actions = [
   { id: 'prices', title: 'Alterar preços', detail: 'Preço de balcão/Sunmi e preço online de cada percurso.', icon: Tag },
   { id: 'legs', title: 'Adicionar embarque', detail: 'Mais pontos de embarque neste autocarro, com os mesmos lugares.', icon: MapPinPlus },
   { id: 'bus', title: 'Trocar autocarro', detail: 'Passa a viagem e os passageiros para outro autocarro livre.', icon: Bus },
+  { id: 'split', title: 'Separar por origem', detail: 'Passa os passageiros de uma origem para outro autocarro, nos mesmos lugares.', icon: Split },
   { id: 'merge', title: 'Juntar noutra viagem', detail: 'Une os passageiros com outro autocarro que tenha lugares.', icon: Merge },
   { id: 'cancel', title: 'Eliminar viagem', detail: 'Disponível apenas quando não há passageiros.', icon: Trash2, danger: true },
 ];
@@ -38,12 +39,21 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
   const [busId, setBusId] = useState('');
   const [legs, setLegs] = useState([]);
   const [prices, setPrices] = useState([]);
+  const [splitOrigin, setSplitOrigin] = useState('');
+  const [splitBus, setSplitBus] = useState('');
+  const [splitDriver, setSplitDriver] = useState('');
+  const [splitPreview, setSplitPreview] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setScreen('menu');
     setOptions(null);
     setBusId('');
+    setSplitOrigin('');
+    setSplitBus('');
+    setSplitDriver('');
+    setSplitPreview(null);
     setPrices((run?.legs || []).map((leg) => ({
       trip_id: leg.trip_id,
       label: `${leg.origin_city} → ${leg.destination_city}`,
@@ -74,6 +84,42 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
     onChanged?.(action);
   };
 
+  const origins = useMemo(() => {
+    const byOrigin = new Map();
+    for (const leg of run?.legs || []) {
+      const key = leg.origin_city || '';
+      const cur = byOrigin.get(key) || { origin: key, sold: 0, legs: [] };
+      cur.sold += Number(leg.sold) || 0;
+      cur.legs.push(`${leg.origin_city} → ${leg.destination_city}`);
+      byOrigin.set(key, cur);
+    }
+    return [...byOrigin.values()];
+  }, [run]);
+
+  // Any change to the choice makes the last preview stale.
+  const chooseSplit = (setter) => (event) => {
+    setter(event.target.value);
+    setSplitPreview(null);
+  };
+
+  const previewSplit = async () => {
+    setPreviewing(true);
+    try {
+      const response = await fetch(`/api/trips/${tripId}/manage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'split_origin', origin_city: splitOrigin, bus_id: splitBus, driver_id: splitDriver, dry_run: true }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Não foi possível pré-visualizar.');
+      setSplitPreview(body.result);
+    } catch (error) {
+      setSplitPreview(null);
+      toast(error.message, 'error');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const submit = async (action, extra = {}) => {
     setSaving(true);
     try {
@@ -90,6 +136,11 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
         cancel: 'Viagem eliminada com sucesso.',
         update_prices: 'Preços atualizados. Os bilhetes já vendidos mantêm o preço pago.',
       };
+      if (action === 'split_origin') {
+        const r = body.result || {};
+        messages.split_origin = `${r.passengers} passageiro(s) de ${r.origin} passaram para ${r.new_bus_plate}`
+          + (r.seat_changes?.length ? ` · ${r.seat_changes.length} com lugar novo.` : ' nos mesmos lugares.');
+      }
       toast(messages[action], 'success');
       finish(action);
     } catch (error) {
@@ -110,7 +161,11 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
       {screen === 'menu' ? (
         <div className="flex flex-col gap-2 pb-5">
           <p className="mb-1 text-sm text-muted-foreground">As alterações aplicam-se a todos os percursos que partilham este autocarro.</p>
-          {actions.filter((action) => action.id !== 'prices' || options?.viewer_role === 'admin').map((action) => {
+          {actions
+            .filter((action) => action.id !== 'prices' || options?.viewer_role === 'admin')
+            // Splitting only makes sense when the bus picks up at more than one place.
+            .filter((action) => action.id !== 'split' || origins.length > 1)
+            .map((action) => {
             const Icon = action.icon;
             const disabled = action.id === 'cancel' && run?.sold > 0;
             return (
@@ -185,6 +240,76 @@ export default function TripManageSheet({ open, onClose, tripId, run, onChanged,
 
       {screen === 'legs' ? (
         <AddBoardingPoints tripId={tripId} toast={toast} onDone={() => finish('legs')} />
+      ) : null}
+
+      {screen === 'split' ? (
+        <div className="space-y-3 pb-5">
+          <p className="text-sm text-muted-foreground">
+            Os passageiros da origem escolhida passam para outro autocarro <strong className="text-foreground">nos mesmos lugares</strong>.
+            Não é uma reprogramação: não se cobra nada e os bilhetes não mudam. As duas origens deixam de partilhar lugares.
+          </p>
+
+          <label className="block text-xs text-muted-foreground">Origem a separar
+            <select value={splitOrigin} onChange={chooseSplit(setSplitOrigin)} className="mt-1 h-12 w-full rounded-2xl border border-border bg-surface px-3 text-sm text-foreground">
+              <option value="">Escolher origem</option>
+              {origins.map((o) => (
+                <option key={o.origin} value={o.origin}>{o.origin} · {o.sold} passageiro(s)</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-xs text-muted-foreground">Novo autocarro
+            <select value={splitBus} onChange={chooseSplit(setSplitBus)} className="mt-1 h-12 w-full rounded-2xl border border-border bg-surface px-3 text-sm text-foreground">
+              <option value="">Escolher autocarro</option>
+              {(options?.buses || []).map((bus) => (
+                <option key={bus.id} value={bus.id}>{bus.license_plate} · {Math.max(bus.capacity - 1, 0)} lugares comerciais</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-xs text-muted-foreground">Motorista do novo autocarro
+            <select value={splitDriver} onChange={chooseSplit(setSplitDriver)} className="mt-1 h-12 w-full rounded-2xl border border-border bg-surface px-3 text-sm text-foreground">
+              <option value="">Escolher motorista</option>
+              {(options?.drivers || []).map((d) => (
+                <option key={d.id} value={d.id}>{`${d.first_name || ''} ${d.last_name || ''}`.trim() || 'Motorista'}</option>
+              ))}
+            </select>
+          </label>
+
+          {splitPreview ? (
+            <Card className="space-y-1.5 p-3 text-sm">
+              <p className="font-bold">
+                {splitPreview.passengers} passageiro(s) de {splitPreview.origin} → {splitPreview.new_bus_plate}
+              </p>
+              <p className="text-muted-foreground">
+                {splitPreview.seats_kept} mantêm o lugar
+                {splitPreview.seat_changes?.length ? `, ${splitPreview.seat_changes.length} com lugar novo (o autocarro é mais pequeno):` : '.'}
+              </p>
+              {splitPreview.seat_changes?.length ? (
+                <p className="text-xs text-muted-foreground">
+                  {splitPreview.seat_changes.map((m) => `${m.old_seat} → ${m.new_seat}`).join(' · ')}
+                </p>
+              ) : null}
+              {splitPreview.cancelled_duplicate_trip_ids?.length ? (
+                <p className="text-xs text-warning">
+                  O novo autocarro tinha uma viagem vazia igual nesse horário; será cancelada para não ficar duplicada.
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {splitPreview ? (
+            <Button className="w-full" loading={saving}
+              onClick={() => submit('split_origin', { origin_city: splitOrigin, bus_id: splitBus, driver_id: splitDriver })}>
+              Confirmar separação
+            </Button>
+          ) : (
+            <Button className="w-full" variant="secondary" loading={previewing}
+              disabled={!splitOrigin || !splitBus || !splitDriver} onClick={previewSplit}>
+              Pré-visualizar
+            </Button>
+          )}
+        </div>
       ) : null}
 
       {screen === 'bus' ? (

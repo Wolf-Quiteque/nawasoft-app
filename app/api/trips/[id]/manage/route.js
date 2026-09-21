@@ -23,6 +23,13 @@ function rpcError(error) {
     [/occupied at this time|already assigned/i, 'O autocarro selecionado já está ocupado nesse horário.'],
     [/Bus or driver is already assigned/i, 'O autocarro ou motorista já está ocupado no novo horário.'],
     [/Routes must overlap/i, 'Os horários dos percursos precisam sobrepor-se para partilhar o mesmo autocarro.'],
+    [/No leg of this journey leaves from that origin/i, 'Nenhum percurso desta viagem sai dessa origem.'],
+    [/Every leg leaves from that origin/i, 'Todos os percursos saem dessa origem — use "Trocar autocarro".'],
+    [/Choose a different bus/i, 'Escolha um autocarro diferente do atual.'],
+    [/Choose a driver/i, 'Escolha um motorista para o novo autocarro.'],
+    [/Driver is already assigned/i, 'Esse motorista já está noutra viagem nesse horário.'],
+    [/online seat holds/i, 'Há lugares a ser pagos online neste momento. Aguarde alguns minutos e tente novamente.'],
+    [/must be active and belong to the same company/i, 'O autocarro tem de estar ativo e ser da mesma empresa.'],
   ];
   return translations.find(([pattern]) => pattern.test(message))?.[1] || message;
 }
@@ -35,7 +42,7 @@ export async function GET(request, { params }) {
   try {
     const run = await loadRun(supabase, id);
     if (!run) return NextResponse.json({ error: 'Viagem não encontrada.' }, { status: 404 });
-    const [{ data: buses, error: busError }, day] = await Promise.all([
+    const [{ data: buses, error: busError }, day, { data: drivers, error: driverError }] = await Promise.all([
       supabase
         .from('buses')
         .select('id, license_plate, make, model, capacity, company_id, is_active')
@@ -43,8 +50,16 @@ export async function GET(request, { params }) {
         .eq('is_active', true)
         .order('license_plate'),
       loadTrips(localDate(run.departure_time)),
+      // Separar por origem needs a driver for the new bus.
+      supabase
+        .from('profiles')
+        .select('id, first_name, last_name, company_id')
+        .eq('role', 'driver')
+        .or(`company_id.is.null,company_id.eq.${run.company_id}`)
+        .order('first_name'),
     ]);
     if (busError) throw busError;
+    if (driverError) throw driverError;
 
     const routeKey = (leg) => `${String(leg.origin_city || '').trim().toLowerCase()}→${String(leg.destination_city || '').trim().toLowerCase()}`;
     const sourceRoutes = new Set(run.legs.map(routeKey));
@@ -66,6 +81,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       run,
       buses: (buses || []).filter((bus) => bus.id !== run.bus?.id),
+      drivers: drivers || [],
       merge_candidates: mergeCandidates,
       viewer_role: auth.profile.role,
     });
@@ -122,11 +138,22 @@ export async function POST(request, { params }) {
     update_times: ['nawasoft_update_run_times', { p_trip_id: id, p_legs: body.legs }],
     replace_bus: ['nawasoft_replace_run_bus', { p_trip_id: id, p_new_bus_id: body.bus_id }],
     merge: ['nawasoft_merge_runs', { p_source_trip_id: id, p_target_trip_id: body.target_trip_id }],
+    // Move one origin's passengers to another bus, same trips and seats.
+    split_origin: ['nawasoft_split_run_origin', {
+      p_trip_id: id,
+      p_origin_city: body.origin_city,
+      p_new_bus_id: body.bus_id,
+      p_new_driver_id: body.driver_id,
+      p_dry_run: body.dry_run === true,
+    }],
   };
   const selected = calls[body.action];
   if (!selected) return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
   if (body.action === 'replace_bus' && !body.bus_id) return NextResponse.json({ error: 'Selecione o novo autocarro.' }, { status: 400 });
   if (body.action === 'merge' && !body.target_trip_id) return NextResponse.json({ error: 'Selecione a viagem de destino.' }, { status: 400 });
+  if (body.action === 'split_origin' && (!body.origin_city || !body.bus_id || !body.driver_id)) {
+    return NextResponse.json({ error: 'Escolha a origem, o autocarro e o motorista.' }, { status: 400 });
+  }
   if (body.action === 'update_times' && !Array.isArray(body.legs)) return NextResponse.json({ error: 'Indique os horários de todos os percursos.' }, { status: 400 });
 
   const { data, error } = await supabase.rpc(selected[0], selected[1]);
