@@ -3,6 +3,7 @@ import { requireStaff } from '@/lib/auth';
 import { loadTickets, TICKETS_PAGE_SIZE } from '@/lib/queries/tickets';
 import { createSupabaseAdminClient } from '@/lib/supabase-admin';
 import { issueInstantTickets, IssueError } from '@/lib/instant-ticket';
+import { canSettleAtCounter, REFERENCE_ONLY_METHOD } from '@/lib/counter-permissions';
 
 function toInt(v, fb) {
   const n = parseInt(v, 10);
@@ -35,6 +36,19 @@ export async function POST(request) {
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = await request.json().catch(() => ({}));
+
+  // Cash and TPA are settled by the seller's word, so only the owner's account
+  // may use them; every other counter sells por referência, which the bank
+  // confirms. Enforced here, not only hidden in the sheet.
+  const method = body?.payment_method || REFERENCE_ONLY_METHOD;
+  if (method !== REFERENCE_ONLY_METHOD && !canSettleAtCounter(auth.user.email)) {
+    return NextResponse.json(
+      { error: 'Esta conta só pode vender por referência Multicaixa.' },
+      { status: 403 }
+    );
+  }
+  body.payment_method = method;
+
   const supabase = createSupabaseAdminClient({ actorUserId: auth.user.id, actorRole: auth.profile.role });
 
   try {

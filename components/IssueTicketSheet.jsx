@@ -58,7 +58,7 @@ function Field({ label, hint, children }) {
  * download link. Closing on that link is the point — handing it over is the
  * last step of the sale, not an afterthought.
  */
-export default function IssueTicketSheet({ open, onClose, run, seats, onIssued }) {
+export default function IssueTicketSheet({ open, onClose, run, seats, onIssued, canSettleAtCounter = false }) {
   const toast = useToast();
 
   const [mode, setMode] = useState('single');
@@ -69,7 +69,11 @@ export default function IssueTicketSheet({ open, onClose, run, seats, onIssued }
   const [pickedSeats, setPickedSeats] = useState([]);
   const [phone, setPhone] = useState('');
   const [promo, setPromo] = useState('');
-  const [method, setMethod] = useState('cash');
+  // Agents sell por referência only; cash and TPA are the owner's to settle.
+  const methods = canSettleAtCounter
+    ? PAYMENT_METHODS
+    : PAYMENT_METHODS.filter((m) => m.value === 'referencia');
+  const [method, setMethod] = useState(canSettleAtCounter ? 'cash' : 'referencia');
   const [saving, setSaving] = useState(false);
   const [issued, setIssued] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -375,9 +379,9 @@ export default function IssueTicketSheet({ open, onClose, run, seats, onIssued }
             />
           </Field>
 
-          <Field label="Pagamento">
+          <Field label="Pagamento" hint={methods.length === 1 ? 'só por referência' : undefined}>
             <div className="flex gap-2">
-              {PAYMENT_METHODS.map((m) => (
+              {methods.map((m) => (
                 <button
                   key={m.value}
                   type="button"

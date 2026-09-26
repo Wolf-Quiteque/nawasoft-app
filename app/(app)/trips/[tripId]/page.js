@@ -161,6 +161,7 @@ export default function TripDetailPage() {
         onClose={() => setIssueOpen(false)}
         run={run}
         seats={seatData?.seats || []}
+        canSettleAtCounter={Boolean(data?.viewer?.can_settle_at_counter)}
         onIssued={() => {
           refetch();
           refetchSeats();
