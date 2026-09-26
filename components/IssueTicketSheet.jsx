@@ -14,7 +14,29 @@ import { useToast } from '@/components/ui/Toast';
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Dinheiro' },
   { value: 'tpa', label: 'TPA' },
+  { value: 'referencia', label: 'Referência' },
 ];
+
+/** The Multicaixa entity every Nawabus reference is paid under. */
+const MULTICAIXA_ENTITY = '1219';
+
+function formatReference(reference) {
+  // Read out loud at the counter, so grouped in threes: 123 456 789
+  return String(reference || '').replace(/(\d{3})(?=\d)/g, '$1 ');
+}
+
+function formatExpiry(iso) {
+  if (!iso) return null;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return null;
+  return when.toLocaleString('pt-PT', {
+    timeZone: 'Africa/Luanda',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
 
 function Field({ label, hint, children }) {
   return (
@@ -150,18 +172,23 @@ export default function IssueTicketSheet({ open, onClose, run, seats, onIssued }
     }
   };
 
-  const copyLink = async () => {
+  const awaitingPayment = issued?.payment_status === 'pending';
+
+  const copyText = async (text) => {
     try {
-      await navigator.clipboard.writeText(issued.download_url);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast('Não foi possível copiar. Copie o link manualmente.', 'error');
+      toast('Não foi possível copiar. Copie manualmente.', 'error');
     }
   };
+  const copyLink = () => copyText(issued.download_url);
 
   const title = issued
-    ? issued.count > 1 ? `${issued.count} bilhetes emitidos` : 'Bilhete emitido'
+    ? awaitingPayment
+      ? issued.count > 1 ? `${issued.count} lugares reservados` : 'Lugar reservado'
+      : issued.count > 1 ? `${issued.count} bilhetes emitidos` : 'Bilhete emitido'
     : 'Emitir bilhetes';
 
   return (
@@ -201,9 +228,40 @@ export default function IssueTicketSheet({ open, onClose, run, seats, onIssued }
             ))}
           </div>
 
+          {awaitingPayment ? (
+            <div className="rounded-2xl border border-primary/40 bg-primary/8 p-3">
+              <p className="text-[11px] font-semibold text-muted-foreground">
+                Referência Multicaixa — Entidade {MULTICAIXA_ENTITY}
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <p className="min-w-0 flex-1 text-2xl font-bold tracking-wide text-foreground">
+                  {formatReference(issued.reference)}
+                </p>
+                <button
+                  onClick={() => copyText(issued.reference)}
+                  className="press-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+                  aria-label="Copiar referência"
+                >
+                  {copied ? <Check size={15} /> : <Copy size={15} />}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatKz(issued.total_due_kz)}
+                {formatExpiry(issued.reference_expires_at)
+                  ? ` · pagar até ${formatExpiry(issued.reference_expires_at)}`
+                  : ''}
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {issued.count > 1 ? 'Os lugares ficam' : 'O lugar fica'} reservado{issued.count > 1 ? 's' : ''} em nome
+                {issued.count > 1 ? ' dos passageiros' : ' do passageiro'}. O bilhete só pode ser descarregado depois do pagamento.
+              </p>
+            </div>
+          ) : null}
+
           <div>
             <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
               Link de descarga {issued.count > 1 ? `(${issued.count} bilhetes num PDF)` : ''}
+              {awaitingPayment ? ' — activo após o pagamento' : ''}
             </p>
             <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/50 p-2.5">
               <p className="min-w-0 flex-1 break-all text-xs text-foreground">{issued.download_url}</p>
