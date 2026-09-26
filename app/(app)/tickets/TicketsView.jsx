@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Search, AlertCircle, Ticket as TicketIcon, ArrowRight } from 'lucide-react';
+import { Search, AlertCircle, Ticket as TicketIcon, ArrowRight, Download } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import Input from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import TicketStatusBadge from '@/components/TicketStatusBadge';
 import { SkeletonList } from '@/components/ui/Skeleton';
+import { ticketDownloadUrl } from '@/lib/ticket-download';
 import EmptyState from '@/components/ui/EmptyState';
 import { useApi } from '@/lib/useApi';
 import { useDebounce } from '@/lib/useDebounce';
@@ -95,6 +96,23 @@ export default function TicketsView({ initialData = null }) {
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
                         <TicketStatusBadge status={t.status} />
                         <span className="text-xs font-semibold">{formatKz(t.price_paid_usd)}</span>
+                        {t.payment_reference && t.payment_status === 'paid' ? (
+                          // Straight to the passenger's PDF, without opening the
+                          // ticket first — the usual reason for searching.
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              window.open(ticketDownloadUrl(t.payment_reference), '_blank', 'noopener');
+                            }}
+                            className="press-scale mt-0.5 flex items-center gap-1 rounded-lg bg-primary/12 px-2 py-1 text-[11px] font-semibold text-primary"
+                            aria-label="Abrir bilhete em PDF"
+                          >
+                            <Download size={12} />
+                            Bilhete
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </Card>

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import {
   AlertCircle, ArrowRight, CalendarClock, Bus as BusIcon,
   Armchair, Wallet, RotateCcw, CalendarCog, ReceiptText, ShieldCheck, History,
+  Download, Copy, Check,
 } from 'lucide-react';
 import BackButton from '@/components/BackButton';
 import { Card } from '@/components/ui/Card';
@@ -17,6 +18,7 @@ import RescheduleSheet from '@/components/RescheduleSheet';
 import { useApi } from '@/lib/useApi';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatFullDateTime, formatKz, initials } from '@/lib/format';
+import { ticketDownloadUrl } from '@/lib/ticket-download';
 
 const REVISION_LABELS = {
   purchase: 'Bilhete emitido',
@@ -58,6 +60,7 @@ export default function TicketDetailPage() {
   const [refundOpen, setRefundOpen] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const doRefund = async () => {
     setRefunding(true);
@@ -154,6 +157,56 @@ export default function TicketDetailPage() {
           />
         </div>
       </Card>
+
+      {ticket.payment_reference ? (
+        <>
+          <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Bilhete do passageiro</p>
+          <Card className="p-4">
+            {ticket.payment_status === 'paid' ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Abre o PDF com todos os bilhetes desta compra. Envie este link ao passageiro.
+                </p>
+                <div className="mt-2.5 flex items-center gap-2 rounded-2xl border border-border bg-muted/50 p-2.5">
+                  <p className="min-w-0 flex-1 break-all text-xs">{ticketDownloadUrl(ticket.payment_reference)}</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(ticketDownloadUrl(ticket.payment_reference));
+                        setLinkCopied(true);
+                        setTimeout(() => setLinkCopied(false), 2000);
+                      } catch {
+                        toast('Nao foi possivel copiar. Copie o link manualmente.', 'error');
+                      }
+                    }}
+                    className="press-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+                    aria-label="Copiar link"
+                  >
+                    {linkCopied ? <Check size={15} /> : <Copy size={15} />}
+                  </button>
+                </div>
+                <a
+                  href={ticketDownloadUrl(ticket.payment_reference)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="press-scale mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                >
+                  <Download size={16} />
+                  Abrir bilhete (PDF)
+                </a>
+              </>
+            ) : (
+              // The page refuses to render an unpaid ticket, so do not hand out
+              // a link that only produces an error.
+              <p className="text-xs text-muted-foreground">
+                O bilhete fica disponivel para descarga assim que o pagamento for confirmado.
+                Referencia {ticket.payment_reference}.
+              </p>
+            )}
+          </Card>
+        </>
+      ) : null}
 
       <p className="mb-2 mt-5 text-sm font-bold text-muted-foreground">Prova da emissão</p>
       <Card className="p-4">
