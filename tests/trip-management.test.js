@@ -6,16 +6,22 @@ import {
   shareOneSeatPool,
 } from '../lib/trip-schedule.js';
 
-test('seat replacement preserves valid seats and replaces out-of-range seats', () => {
+test('seat replacement preserves sellable seats and avoids co-pilot seat 3', () => {
   assert.deepEqual(assignReplacementSeats([2, 3], [14, 50, 4], 35), [
     { old_seat: 14, new_seat: 14 },
-    { old_seat: 50, new_seat: 5 },
+    { old_seat: 50, new_seat: 1 },
     { old_seat: 4, new_seat: 4 },
   ]);
 });
 
+test('seat replacement moves a passenger off the newly reserved seat', () => {
+  assert.deepEqual(assignReplacementSeats([], [3], 10), [
+    { old_seat: 3, new_seat: 1 },
+  ]);
+});
+
 test('seat replacement rejects a merge that does not fit', () => {
-  assert.throws(() => assignReplacementSeats([2, 3], [4, 5], 4), /lugares suficientes/);
+  assert.throws(() => assignReplacementSeats([1, 2, 4], [4, 5], 4), /lugares suficientes/);
 });
 
 test('weekly schedules include only selected weekdays', () => {

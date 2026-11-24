@@ -30,6 +30,27 @@ CREATE TABLE IF NOT EXISTS public.ticket_itinerary_revisions (
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
+
+
+
+CREAT TABLE IF NOT EXISTS public.ticket_document_access_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_reference text,
+  ticket_ids uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+  outcome text NOT NULL CHECK (outcome IN (
+    'authorized', 'blocked_refunded', 'blocked_cancelled',
+    'blocked_unpaid', 'payment_incomplete', 'not_found', 'invalid_reference', 'error'
+  )),
+  details jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ip_hash text,
+  user_agent text,
+  requested_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE TABLE NOP {
+FOOL:"40"
+}
+
 CREATE INDEX IF NOT EXISTS idx_ticket_itinerary_revisions_ticket
   ON public.ticket_itinerary_revisions(ticket_id, recorded_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_ticket_itinerary_revisions_trip

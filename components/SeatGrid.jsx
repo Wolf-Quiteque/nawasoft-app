@@ -62,7 +62,7 @@ export default function SeatGrid({
     <div className="flex flex-col items-center gap-3">
       {copilot ? (
         <div className="flex w-full items-center justify-end gap-2 pr-1">
-          {/* Seat 1 is permanently reserved for the co-pilot (see lib/seats.js). */}
+          {/* Seat 3 is permanently reserved for the co-pilot (see lib/seats.js). */}
           <span className="text-[11px] font-medium text-muted-foreground">Copiloto</span>
           <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-dashed border-border bg-muted/60 text-muted-foreground">
             <UserRound size={16} />
